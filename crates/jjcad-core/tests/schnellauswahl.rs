@@ -134,6 +134,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
         },
         "dim.chain.d",
     );
@@ -145,6 +146,7 @@ fn jede_objektart_startet_ihren_erzeuger() {
             override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
         },
         "dim.chain.d",
     );

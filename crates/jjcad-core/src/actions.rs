@@ -316,6 +316,10 @@ pub const ACTIONS: &[ActionDef] = &[
     // (T0154) — beides im Reiter „Bemaßung".
     act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
     act!("dim.point.remove", "action.dim.point.remove.label", Bemassung, "erase", "", "action.dim.point.remove.hint", true),
+    // Höhenangaben unter einer Maßkette (T0253): ein Werkzeug zum Setzen,
+    // ein Befehl zum Schreiben (Editor, MCP, Skripte).
+    act!("dim.height", "action.dim.height.label", Bemassung, "dim-height", "", "action.dim.height.hint", true),
+    act!("dim.height.set", "action.dim.height.set.label", Bemassung, "dim-height", "", "action.dim.height.set.hint", false),
     act!("dim.elevation.plan", "action.dim.elevation.plan.label", Bemassung, "elevation", "n", "action.dim.elevation.plan.hint", true),
     act!("dim.elevation.section", "action.dim.elevation.section.label", Bemassung, "elevation-section", "", "action.dim.elevation.section.hint", true),
     act!(
@@ -441,6 +445,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "dim.elevation.section"
             | "dim.room"
             | "dim.style"
+            | "dim.height.set"
             | "modify.move"
             | "modify.order"
             | "modify.copy"
@@ -1784,6 +1789,7 @@ fn dim_kette(
             override_text: p.text("text"),
             ext_lines: p.boolean_or("ext_lines", false),
             symbol: dim_symbol(doc, p)?,
+            heights: Vec::new(),
         },
     );
     apply_common(doc, &mut e, p, layer);
@@ -2608,6 +2614,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     override_text: p.text("text"),
                     ext_lines: p.boolean_or("ext_lines", false),
                     symbol: dim_symbol(doc, &p)?,
+                    heights: Vec::new(),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -2710,7 +2717,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let e = doc
                     .entity_mut(id)
                     .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
-                let EntityKind::Dim { pts, angle, .. } = &mut e.kind else {
+                let EntityKind::Dim {
+                    pts, angle, heights, ..
+                } = &mut e.kind
+                else {
                     return Err("dim.point.add · Objekt ist keine Maßkette".to_string());
                 };
                 let idx = match p.num("index") {
@@ -2718,6 +2728,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     None => einfuege_index(pts, *angle, q),
                 };
                 pts.insert(idx, q);
+                // Höhenangaben hängen am Abschnitt (T0253): der neue Abschnitt
+                // beginnt ohne Angabe, die alten behalten ihre.
+                if !heights.is_empty() {
+                    heights.insert(idx.min(heights.len()), String::new());
+                }
                 (idx, pts.len())
             };
             doc.modified = true;
@@ -2735,7 +2750,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let e = doc
                     .entity_mut(id)
                     .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
-                let EntityKind::Dim { pts, .. } = &mut e.kind else {
+                let EntityKind::Dim { pts, heights, .. } = &mut e.kind else {
                     return Err("dim.point.remove · Objekt ist keine Maßkette".to_string());
                 };
                 if pts.len() <= 2 {
@@ -2757,10 +2772,55 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                 };
                 pts.remove(idx);
+                // Die Höhenangabe des wegfallenden Abschnitts fällt mit ihm
+                // weg (T0253); die übrigen rücken nach.
+                if idx < heights.len() {
+                    heights.remove(idx);
+                }
                 (idx, pts.len())
             };
             doc.modified = true;
             Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
+        }
+        // Höhenangabe eines Abschnitts schreiben (T0253). Ein leerer Text
+        // nimmt sie zurück; der Index muss ein vorhandener Abschnitt sein —
+        // ein stiller Ersatz wäre ein Fehler (T0038).
+        "dim.height.set" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.height.set · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let idx = match p.num("index") {
+                Some(i) => i.round().max(0.0) as usize,
+                None => return Err("dim.height.set · Parameter 'index' fehlt".to_string()),
+            };
+            let text = p.text("text").unwrap_or_default().trim().to_string();
+            {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, heights, .. } = &mut e.kind else {
+                    return Err("dim.height.set · Objekt ist keine Maßkette".to_string());
+                };
+                let abschnitte = pts.len().saturating_sub(1);
+                if idx >= abschnitte {
+                    return Err(format!(
+                        "dim.height.set · Abschnitt {idx} gibt es nicht (die Kette hat {abschnitte})"
+                    ));
+                }
+                // Ohne Änderung bleibt das Dokument unberührt — ein Klick
+                // ohne Tippen darf die Datei nicht als geändert markieren.
+                if heights.get(idx).map(|s| s.as_str()).unwrap_or("") == text {
+                    return Ok(json!({"ok": true, "changed": [], "index": idx}));
+                }
+                if heights.len() < abschnitte {
+                    heights.resize(abschnitte, String::new());
+                }
+                heights[idx] = text;
+            }
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx}))
         }
         // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel. Die Lage des
         // Höhenwertes ist `text_pos` (Vorgabe „oben", T0196) — ein unbekannter
@@ -3101,15 +3161,26 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 EckeArt::Phase
             };
             let ids = ids_from(&p, "ids");
-            if ids.len() < 2 {
-                return Err("Abrunden und Phase brauchen zwei Linien".into());
-            }
             let mass = p
                 .len(art.mass_name())
                 .or_else(|| p.len("mass"))
                 .or_else(|| p.len("radius"))
                 .or_else(|| p.len("distance"))
                 .ok_or_else(|| "Parameter 'radius' bzw. 'distance' fehlt".to_string())?;
+            // Knick einer Polylinie (T0247): **ein** Objekt und der Scheitelpunkt.
+            if let (Some(id), Some(knoten)) = (ids.first().copied(), p.num("vertex")) {
+                let e = crate::ecke::anwenden_polylinie(doc, id, knoten as usize, mass, art)?;
+                return Ok(json!({
+                    "ok": true,
+                    "changed": [id],
+                    "point": [e.punkt.x / 1000.0, e.punkt.y / 1000.0],
+                    "mass": e.mass,
+                    "leg": e.schenkel
+                }));
+            }
+            if ids.len() < 2 {
+                return Err("Abrunden und Phase brauchen zwei Linien oder eine Polylinie mit Knick".into());
+            }
             let picks = p.pts("picks").unwrap_or_default();
             let (e, neu) = crate::ecke::anwenden(
                 doc,
@@ -3358,6 +3429,61 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     .filter(|i| doc.layers.iter().any(|x| x.id == *i))
                     .or_else(|| l.as_str().and_then(|s| doc.layer_id_by_name(s)))
             });
+            // T0245: Layer und Plan sind zwei getrennte Aufträge.
+            // `plan` = Zielplan, die Objekte behalten ihren **Layernamen**;
+            // `layer_name` = dieser Name im Plan **jedes** Objekts. Beides
+            // erhält die Layerstruktur — vorher ließ sich nur eine Ebene für
+            // alle Objekte setzen, und ein Eintrag der Liste trug Plan und
+            // Layer zugleich.
+            let ziel_plan: Option<Id> = match p.v.get("plan") {
+                None | Some(Value::Null) => None,
+                Some(v) => {
+                    let pid = v
+                        .as_u64()
+                        .filter(|i| doc.plans.iter().any(|x| x.id == *i))
+                        .or_else(|| {
+                            v.as_str().and_then(|s| {
+                                doc.plans
+                                    .iter()
+                                    .find(|x| x.name.eq_ignore_ascii_case(s))
+                                    .map(|x| x.id)
+                            })
+                        });
+                    match pid {
+                        Some(id) => Some(id),
+                        None => return Err("Plan nicht gefunden".into()),
+                    }
+                }
+            };
+            let ziel_name = p
+                .text("layer_name")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            // Ziellayer je Objekt vorab ausrechnen: der Name bleibt, nur der
+            // Plan wechselt (bzw. der Name wechselt im eigenen Plan).
+            let ebene_je_objekt: Vec<(Id, Id)> = if ziel_plan.is_some() || ziel_name.is_some() {
+                let mut liste = Vec::new();
+                for eid in &ids {
+                    let Some(e) = doc.entity(*eid) else { continue };
+                    let Some(l) = doc.layer(e.layer) else { continue };
+                    let (alt_name, alt_color, alt_plan) = (l.name.clone(), l.color, l.plan);
+                    let plan = ziel_plan.unwrap_or(alt_plan);
+                    let name = ziel_name.clone().unwrap_or(alt_name);
+                    // Vorhandene Ebene dieses Namens im Zielplan behält ihre
+                    // Farbe; sonst erbt die neue die Farbe der Quellebene.
+                    let color = doc
+                        .layers
+                        .iter()
+                        .find(|x| x.plan == plan && x.name.eq_ignore_ascii_case(&name))
+                        .map(|x| x.color)
+                        .unwrap_or(alt_color);
+                    let lid = doc.ensure_layer_in(&name, color, plan);
+                    liste.push((*eid, lid));
+                }
+                liste
+            } else {
+                Vec::new()
+            };
             // Ausrichtung vorab lesen (gilt für Wand und Öffnungen)
             let align_new: Option<crate::style::WallAlign> =
                 p.text("align").map(|al| match al.to_lowercase().as_str() {
@@ -3437,7 +3563,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     _ => None,
                 };
                 if let Some(e) = doc.entity_mut(*eid) {
-                    if let Some(lid) = new_layer {
+                    let ziel_ebene = new_layer.or_else(|| {
+                        ebene_je_objekt
+                            .iter()
+                            .find(|(id, _)| id == eid)
+                            .map(|(_, l)| *l)
+                    });
+                    if let Some(lid) = ziel_ebene {
                         e.layer = lid;
                     }
                     if let Some(c) = p.color("color") {
@@ -3905,9 +4037,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             override_text,
                             ext_lines,
                             symbol,
+                            heights,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
+                            }
+                            // Höhenangaben unter den Abschnitten (T0253):
+                            // ein Feld je Abschnitt. `null`/`[]` nimmt sie
+                            // alle zurück.
+                            if let Some(list) = p.v.get("heights") {
+                                if list.is_null() {
+                                    heights.clear();
+                                } else if let Some(arr) = list.as_array() {
+                                    *heights = arr
+                                        .iter()
+                                        .map(|v| v.as_str().unwrap_or("").to_string())
+                                        .collect();
+                                }
                             }
                             // Punktsymbol an den Messpunkten (T0227): leer =
                             // kein Symbol, sonst steht der Block geprüft bereit.

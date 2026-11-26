@@ -288,6 +288,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
   `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
   und `cargo test -p jjcad-core --test massketten_farbe`.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel
+  ist **ein** Dropdown mit zwei Abschnitten — oben jeder Layername **einmal**, darunter
+  die Pläne (`props::ebene_dropdown`). Das Feld nennt den gemeinsamen Plan und meldet
+  abweichende Layer als `*variiert*`; liegen die Objekte in verschiedenen Plänen, steht
+  dort `*variiert*`. Zwei getrennte Aufträge an die Befehlsschicht, beide über
+  `modify.set`: `layer_name` setzt diesen Namen im Plan **jedes** Objekts, `plan`
+  verschiebt auf denselben Layernamen im Zielplan (`actions.rs` rechnet die Ziellayer je
+  Objekt vorab, `ensure_layer_in` legt fehlende an). Nur so verschieben sich mehrere
+  Objekte verschiedener Layer gemeinsam auf einen anderen Plan, ohne ihre
+  Layerstruktur zu verlieren. Ältere Einträge der Liste („Plan · Layer“) gibt es nicht
+  mehr. Prüfweg: `cargo test -p jjcad-core --test layer_plan` und
+  `cargo test -p jjcad-gui tests_layer_plan`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
@@ -685,6 +697,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
   Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
+- **Richtung während der Eingabe drehen (T0250)**: Läuft ein Maßketten-Werkzeug
+  (`dim.chain.h`/`.v`), schaltet die Funktion „Drehen“ (`modify.rotate`)
+  zwischen waagerecht und senkrecht um, statt das Drehwerkzeug zu starten.
+  Der Haken sitzt in `App::start_tool` (`App::masskette_drehen`) — damit gilt
+  er für jeden Startweg (Taste `R`, Ribbon, Hotbar). Der Werkzeugpuffer bleibt
+  stehen: die Lage der Maßlinie (`pts[0]`) und die Messpunkte liegen in beiden
+  Modi an derselben Stelle, der nächste Klick bzw. ESC legt die Kette in der
+  neuen Richtung an; `ToolOptions::dim_axis` zieht mit, das Eigenschaften-Panel
+  zeigt sie sofort. „Direkt“ hat keine feste Richtung und bleibt unberührt
+  (dort startet Drehen wie bisher das Drehwerkzeug). Prüfweg:
+  `cargo test -p jjcad-gui tests_masskette_drehen` (4 Tests, darunter der echte
+  Tastendruck `R`), Prüfbild `--demo masskettewechsel`.
 - **Verlängerung zu den Messpunkten (T0226)**: Die Maßhilfslinien von den
   Messpunkten zur Maßlinie sind ein Schalter je Maßkette
   (`EntityKind::Dim::ext_lines`, `#[serde(default)]`, Vorgabe **aus**). Im
@@ -726,6 +750,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Entity::kann_punktsymbol` (Punkt/Linie) — sonst trüge die Kette zwei Symbole.
   Prüfweg: `cargo test -p jjcad-core --test masskette_symbol` und
   `cargo test -p jjcad-gui tests_masskette_symbol`; Prüfbild `--demo masskette`.
+- **Höhenangaben unter Maßketten (T0253)**: Jeder Abschnitt einer Maßkette kann
+  eine Höhenangabe tragen — ein einfaches Textfeld **unter** der Maßlinie (die
+  Maßzahl steht darüber). Gespeichert ist sie in `EntityKind::Dim::heights`
+  (`Vec<String>`, Index = Abschnitt, leere Einträge = keine Angabe,
+  `skip_serializing_if`), damit sie mit der Kette wandert und beim Entfernen
+  eines Messpunkts mit ihrem Abschnitt verschwindet. Geschrieben wird über
+  `dim.height.set` (`ids`, `index`, `text`), das Werkzeug `dim.height` (Ribbon
+  Bemaßung) öffnet nach einem Klick auf den Abschnitt das Feld; ein
+  **Doppelklick** auf eine vorhandene Angabe öffnet sie über
+  `textedit::start_hoehe` — derselbe Editor wie beim Text, einzeilig, Esc/Enter
+  übernimmt. Lage, Winkel und Ausrichtung stehen **einmal** in
+  `render::dim_hoehe_lagen` (Anzeige, Doppelklick
+  `render::dim_hoehe_unter_punkt`, Editor); die Abschnittswahl für den Klick
+  ist `render::dim_abschnitt_bei`. Vorschau von Ketten zeigt keine Höhen.
+  Prüfweg: `cargo test -p jjcad-core --test hoehenangaben`,
+  `cargo test -p jjcad-gui tests_hoehenangabe` und
+  `cargo test -p jjcad-gui tests_hoehe`; Prüfbilder `--demo hoehenangabe`
+  und `--demo hoehenangabewerkzeug`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine
@@ -783,6 +825,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   in Weltkoordinaten (`tol` des Fangs, Vorgabe 12 px), also bildschirmkonstant. Der
   Fangbereich ist damit ein Band mit einer Spitze am Bezugspunkt: nah am Punkt begrenzt der
   Winkel, fern die Breite. Eine reine Winkelprüfung (`polar_snap_from_tol`) gibt es nicht mehr.
+- **Lotrecht × Nächster Punkt (T0243)**: Die Senkrechte ist für sich eine *Linie*, der
+  Fang liefert aber nur den Fußpunkt des Zeigers auf ihr — ein Punkt neben der anderen
+  Linie. „Nächster Punkt" liefert umgekehrt den Fußpunkt auf der anderen Linie, neben der
+  Senkrechten. Wer eine lotrechte Linie bis an eine kreuzende zeichnet, meint den **Schnitt
+  beider Bedingungen**; ohne ihn springt der Punkt beim Weiterziehen (gemeldet T0243).
+  Deshalb rechnet `snap::lot_treffer` (Parameter `mit_naechstem`, gespeist aus
+  `snap.nearest`) als **erstes** die Kreuzung der Senkrechten mit jeder fremden Strecke in
+  Zeigernähe (`snap::kreuzung_der_senkrechten` über `nahe_segmente`, dieselbe Auswahl wie
+  „Nächster Punkt"): liegt sie im Fangradius, tritt sie an die Stelle des Fußpunkts. Die
+  Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
+  (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
+  bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
@@ -818,22 +875,29 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
   Prüfbild `--demo "draw,parallele"`.
 - **Abrunden und Phase (T0247)**: Zwei Werkzeuge im Reiter „Ändern" (Gruppe
-  Geometrie) bearbeiten eine **Ecke aus zwei Linien**. Der Ablauf ist immer
-  derselbe: Klick auf die erste Linie, Klick auf die zweite (der Schnittpunkt
-  wird geprüft), dann das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
-  getippt + Enter. Die getippte Zahl **ist** das Maß (`Tool::obj2` schaltet den
-  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem
-  Zeiger ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie
-  steht **einmal** in `crates/jjcad-core/src/ecke.rs` (`ecke`, `anwenden`);
-  Klick (`canvas::ecke_setzen`), Vorschau (`draw_tool_preview`) und die Actions
-  `modify.fillet`/`modify.chamfer` rufen sie. Welcher Teil einer Linie stehen
-  bleibt, entscheidet die **Klickstelle** (`picks` im Befehl), ohne sie die
-  längere Seite. Das Verbindungsstück (Bogen bzw. Gerade) erbt Ebene und Stil
-  der ersten Linie; beide Linien werden gekürzt. Zu großes Maß, parallele
-  Linien und andere Objektarten sind Fehler (kein stiller Erfolg, T0038).
-  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (5 Tests) und
-  `cargo test -p jjcad-gui tests_ecke` (5 Tests); Prüfbilder `--demo abrunden`
-  und `--demo phase`.
+  Geometrie) bearbeiten eine **Ecke**. Die Ecke ist **ein** Klick, wenn der Zeiger
+  sie schon trifft: der **Schnittpunkt zweier Linien** (`ecke::linien_durch` liefert
+  alle Linien im Fangradius, zwei davon bilden die Ecke) oder der **Knick einer
+  Polylinie** (`ecke::polylinien_knoten`; offene Enden und Knicke an Bogenstücken
+  werden gar nicht angeboten). Sonst wählt der erste Klick eine Linie, der zweite
+  die Partnerlinie. Danach das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
+  getippt + Enter. Die getippte Zahl **ist** das Maß (`ecke_bereit` schaltet den
+  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem Zeiger
+  ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie steht
+  **einmal** in `crates/jjcad-core/src/ecke.rs`: `ecke_aus_strahlen` ist die reine
+  Rechnung auf zwei Schenkeln, `ecke`/`anwenden` arbeiten auf zwei Linien,
+  `ecke_polylinie`/`anwenden_polylinie` auf dem Knick einer Polylinie (der
+  Scheitelpunkt wird durch die beiden Anschlusspunkte ersetzt, dazwischen steht der
+  Bogen als Bulge — alles in **einem** Objekt). Klick (`canvas::ecke_setzen`),
+  Vorschau (`draw_tool_preview`) und die Actions `modify.fillet`/`modify.chamfer`
+  (Parameter `ids` + optional `vertex`) rufen dieselben Funktionen. Welcher Teil
+  einer Linie stehen bleibt, entscheidet die **Klickstelle** (`picks` im Befehl),
+  ohne sie die längere Seite. Das Verbindungsstück erbt Ebene und Stil der ersten
+  Linie; beide Linien werden gekürzt. Zu großes Maß, parallele Linien und andere
+  Objektarten sind Fehler (kein stiller Erfolg, T0038).
+  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (11 Tests) und
+  `cargo test -p jjcad-gui tests_ecke` (9 Tests); Prüfbilder `--demo abrunden`,
+  `--demo phase` und `--demo knick`.
 - **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
   Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
   `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende

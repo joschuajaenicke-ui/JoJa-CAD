@@ -40,7 +40,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Messpunkte, der dritte Klick legt die Maßlinie parallel fest, weitere Klicks
    hängen Messpunkte an. `Enter` **oder `Esc`** beendet die Eingabe — `Esc`
    **bestätigt** sie dabei, statt die gesetzten Punkte zu verwerfen (wie beim
-   Text); ohne einen einzigen Klick bricht `Esc` ab. Einzelmaß und Maßkette
+   Text); ohne einen einzigen Klick bricht `Esc` ab. **Drehen** (`R`) schaltet
+   während der Eingabe zwischen *Waagerecht* und *Senkrecht* um — die gesetzten
+   Punkte und die Lage der Maßlinie bleiben stehen, die Kette entsteht in der
+   neuen Richtung. Einzelmaß und Maßkette
    sind dasselbe Element: ein Einzelmaß ist die Kette aus zwei Messpunkten.
    **Punkt hinzufügen**/**Punkt entfernen** arbeiten in **zwei Schritten**:
    erst die Maßkette anklicken (sie wird blau markiert), dann den Messpunkt —
@@ -50,6 +53,14 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
+   **Höhenangabe** (Ribbon ▸ Bemaßung ▸ „Höhenangabe“): die Maßkette an dem
+   Abschnitt anklicken, der die Höhe bekommen soll — unter der Maßlinie steht
+   dann ein einfaches Textfeld, in das die Höhe getippt wird. `Esc` oder
+   `Enter` übernimmt, ein Klick daneben ebenfalls, Rechtsklick bricht ab. Jeder
+   Abschnitt trägt höchstens eine Angabe; sie steht **unter** der Maßkette
+   (die Maßzahl steht darüber) und wandert mit ihr mit. Ein **Doppelklick** auf
+   eine vorhandene Höhenangabe öffnet sie wieder zum Ändern; ein leerer Text
+   nimmt sie zurück.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
@@ -430,8 +441,13 @@ ausgeblendet.
   **Schnittpunkt** beider Linien (dem festen Punkt), leicht daneben oben rechts, damit sie
   den Punkt nicht zudeckt. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der
   Statusleiste („Lotfang“).
-  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (14 Tests, prüfen das Skalarprodukt
-  der beiden Richtungen gegen 0, die Lage der Marke und die Wandkanten).
+  **Mit „Nächster Punkt“ zusammen** (T0243): Kreuzt die Senkrechte eine andere Linie in
+  Zeigernähe, wird deren **Schnittpunkt** gefangen — der Punkt liegt dann auf der
+  Senkrechten *und* auf der anderen Linie. So endet eine lotrechte Linie genau dort, wo sie
+  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (22 Tests, prüfen das Skalarprodukt
+  der beiden Richtungen gegen 0, die Lage der Marke, die Wandkanten und die Kreuzung mit
+  einer anderen Linie).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
@@ -453,18 +469,23 @@ ausgeblendet.
   (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
   zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
-- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): zwei **Linien** nacheinander
-  anklicken, die sich schneiden; der Schnittpunkt ist die Ecke. Danach bestimmt der
-  Mauszeiger das Maß — der Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt
-  es sich tippen und mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der
-  Zeiger darf dabei auf dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke:
-  gekürzte Linien und den Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**).
-  Welcher Teil einer Linie stehen bleibt, entscheidet die **Klickstelle** — geklickt wird
-  die Seite, die erhalten bleibt. Abrunden braucht einen Radius, die Phase ein Maß auf
-  beiden Schenkeln; ist es für eine der Linien zu groß, meldet der Chat „Das Maß ist für
-  die kürzere Linie zu groß" und die Zeichnung bleibt unverändert. Nach dem Setzen ist das Werkzeug für das
-  nächste Paar bereit, `ESC` beendet es.
-- **Linien** werden als Kapsel gezeichnet:- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
+- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): die **Ecke** wählen, dann das
+  Maß. Ein einziger Klick genügt, wenn der Zeiger die Ecke schon trifft — den
+  **Schnittpunkt zweier Linien** oder den **Knick einer Polylinie**; beide Linien bzw.
+  die beiden Nachbarstücke werden dabei gemeinsam gewählt. Sonst wählt der erste Klick
+  eine Linie und der zweite die Partnerlinie. Danach bestimmt der Mauszeiger das Maß —
+  den Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt es sich tippen und
+  mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der Zeiger darf dabei auf
+  dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke: gekürzte Schenkel und den
+  Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**). Welcher Teil einer Linie
+  stehen bleibt, entscheidet die **Klickstelle** — geklickt wird die Seite, die erhalten
+  bleibt. Bei der Polylinie bleibt alles **ein** Objekt: der Scheitelpunkt wird durch die
+  beiden Anschlusspunkte ersetzt, dazwischen liegt der Bogen. Abrunden braucht einen
+  Radius, die Phase ein Maß auf beiden Schenkeln; ist es für den kürzesten Schenkel zu
+  groß, meldet der Chat „Das Maß ist für die kürzere Linie zu groß" und die Zeichnung
+  bleibt unverändert. Offene Enden einer Polylinie und Knicke an Bogenstücken sind keine
+  Ecken. Nach dem Setzen ist das Werkzeug für die nächste Ecke bereit, `ESC` beendet es.
+- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
 - **Linienstärke neuer Objekte** (Einstellungen ▸ Voreinstellungen): eine Zeile je Objektart
@@ -562,6 +583,13 @@ ausgeblendet.
   Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
   Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
   Farbpunkt im Layer-Manager.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel ist **ein**
+  Dropdown mit **zwei Abschnitten**: oben jeder Layername **einmal**, darunter die Pläne. Ein Klick
+  auf einen Layernamen setzt diesen Layer im Plan **jedes** gewählten Objekts; ein Klick auf einen
+  Plan verschiebt alle gewählten Objekte dorthin und behält ihren Layernamen bei — ein Text bleibt
+  auf „Beschriftung“, eine Linie auf „Zeichnung“. Liegen die Objekte im selben Plan, nennt das Feld
+  den Plan und meldet abweichende Layer als `*variiert*` („Plan 1 · *variiert*“); liegen sie in
+  verschiedenen Plänen, steht dort `*variiert*`.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

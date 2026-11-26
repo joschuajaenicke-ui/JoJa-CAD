@@ -266,6 +266,14 @@ label = "Add point"
 hint = "Click a measuring point — it leaves the chain"
 label = "Remove point"
 
+[action.dim.height]
+hint = "Click a dimension chain — height annotation below the segment"
+label = "Height note"
+
+[action.dim.height.set]
+hint = "Write the height annotation of a segment"
+label = "Set height note"
+
 [action.dim.elevation.plan]
 hint = "Click a point — height in the properties panel"
 label = "Plan level"
@@ -1045,7 +1053,10 @@ masskette_position_klicken = "Dimension chain · position of the line"
 masskette_messpunkt_klicken_enter = "Dimension chain · click a point (Esc ends)"
 masskette_zweiter_punkt = "Dimension chain · second measuring point"
 masskette_position_parallel_klicken = "Dimension chain · set the line (Esc ends)"
+masskette_waagerecht = "Dimension chain · horizontal"
+masskette_senkrecht = "Dimension chain · vertical"
 punkt_hinzufuegen_messpunkt_klicken = "Add point · click a measuring point"
+hoehenangabe_masskette_klicken = "Height note · click a dimension chain or segment"
 punkt_hinzufuegen_masskette_klicken = "Add point · click a dimension chain"
 punkt_hinzufuegen_gesetzt = "Add point · done"
 punkt_entfernen_messpunkt_klicken = "Remove point · click a measuring point"
@@ -1855,6 +1866,7 @@ laenge_und_winkel_entstehen_aus_den_klicks = "Length and angle come from the cli
 laenge_x_achse_x_x_x_x = "Length {wert1} · axis ({wert2}, {wert3}) – ({wert4}, {wert5})"
 lage_in_der_wanddicke_links_mittig_rechts = "Position in the wall thickness: Left / Centre / Right"
 layer = "Layer"
+plan = "Plan"
 linie = "Line"
 linientyp = "Line type"
 daemmung_breite = "Width"
@@ -1972,6 +1984,10 @@ bilddaten = "Image data"
 
 
 [gui.textedit]
+hoehe_eingeben_esc_uebernimmt = "Height note · type the text (Esc applies)"
+hoehe_aendern_esc_uebernimmt = "Height note · edit (Esc applies)"
+hoehe_geaendert = "Height note · changed"
+hoehe_hinweis = "Esc applies · Enter confirms · right click cancels"
 esc_uebernimmt_hinweis = "Esc applies · Enter new line · right click cancels"
 text_abgebrochen = "Text · cancelled"
 text_geaendert = "Text · changed"

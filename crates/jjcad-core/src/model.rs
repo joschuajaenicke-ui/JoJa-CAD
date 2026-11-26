@@ -875,6 +875,13 @@ pub enum EntityKind {
         /// Maßkette selbst.
         #[serde(default = "default_dim_symbol")]
         symbol: String,
+        /// Höhenangaben **unter** der Maßkette (T0253): je Abschnitt ein
+        /// einfaches Textfeld, Index = Abschnitt zwischen `pts[i]` und
+        /// `pts[i + 1]`. Leerer Text heißt „keine Angabe“; fehlende Einträge
+        /// ebenso. Kürzer als die Segmentzahl ist gültig — dann tragen die
+        /// hinteren Abschnitte keine Höhe.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        heights: Vec<String>,
     },
     /// Radiusbemaßung eines Kreises oder Bogens (T0252).
     ///

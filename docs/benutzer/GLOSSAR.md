@@ -40,8 +40,8 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Wandkante** / **Wandkontur** | Die beiden Längsflächen des Wandkörpers, senkrecht zur Dicke | Wandlinie, Rand |
 | **Wandkörper** | Die gefüllte Fläche zwischen den Kanten (Dicke × Länge) | Wandfläche, Wandblock |
 | **Gehrung** | Der geschlossene Übergang zweier Wände an einer Ecke; entsteht über die Winkelhalbierende | Ecke, Verbindung |
-| **Abrunden** | Werkzeug „Ändern ▸ Geometrie“: zwei sich schneidende **Linien** werden um den **Radius** gekürzt und mit einem **Bogen** verbunden; welcher Teil der Linien stehen bleibt, bestimmt die Klickstelle (T0247) | Fillet, Verrunden, Ecke runden |
-| **Phase** | Werkzeug „Ändern ▸ Geometrie“: zwei sich schneidende **Linien** werden um das **Maß** (Schenkellänge) gekürzt und mit einer **Geraden** verbunden — dieselbe Bedienung wie Abrunden (T0247) | Fase, Chamfer, Abschrägung |
+| **Abrunden** | Werkzeug „Ändern ▸ Geometrie“: zwei sich schneidende **Linien** (oder der **Knick einer Polylinie**) werden um den **Radius** gekürzt und mit einem **Bogen** verbunden; welcher Teil der Linien stehen bleibt, bestimmt die Klickstelle (T0247) | Fillet, Verrunden, Ecke runden |
+| **Phase** | Werkzeug „Ändern ▸ Geometrie“: zwei sich schneidende **Linien** (oder der **Knick einer Polylinie**) werden um das **Maß** (Schenkellänge) gekürzt und mit einer **Geraden** verbunden — dieselbe Bedienung wie Abrunden (T0247) | Fase, Chamfer, Abschrägung |
 | **Winkelhalbierende** | Hilfslinie, die den Innenwinkel zweier Wände halbiert; **nie sichtbar** im Plan | Halbierende, Mittellinie des Winkels |
 | **Ausrichtung** (Wand) | Lage des Körpers zur Achse: Links / Mittig / Rechts | Seite, Offset |
 | **Ausrichtung** (Text) | Lage des Textkastens zu seinem Einfügepunkt, zwei Achsen: waagerecht **Linksbündig / Zentriert / Rechtsbündig**, senkrecht **Oben / Mitte / Unten** | Absatz, Anker, Justierung |

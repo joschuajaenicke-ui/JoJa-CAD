@@ -560,6 +560,10 @@ pub struct Tool {
     /// welche Seite der Linie stehen bleibt. Ohne sie gilt die längere Seite.
     pub pick_a: Option<V2>,
     pub pick_b: Option<V2>,
+    /// Knick einer Polylinie (T0247): der Index des Scheitelpunkts in `obj`.
+    /// Ein Klick auf den Knick wählt die Ecke in **einem** Schritt; `pts` trägt
+    /// dann den Scheitelpunkt als Eckpunkt.
+    pub knoten: Option<usize>,
     pub selecting: bool,
     pub phase: ToolPhase,
 }
@@ -715,6 +719,17 @@ impl DimModus {
             "dim.chain.v" => Some(DimModus::Senkrecht),
             "dim.chain.d" => Some(DimModus::Direkt),
             _ => None,
+        }
+    }
+
+    /// Der um 90° gedrehte Modus (T0250): waagerecht ↔ senkrecht.
+    ///
+    /// „Direkt“ hat keine feste Richtung — dort gibt es nichts zu drehen.
+    pub fn gedreht(self) -> Option<Self> {
+        match self {
+            DimModus::Waagerecht => Some(DimModus::Senkrecht),
+            DimModus::Senkrecht => Some(DimModus::Waagerecht),
+            DimModus::Direkt => None,
         }
     }
 
@@ -3321,6 +3336,38 @@ impl App {
                     self.set_view(v);
                     self.started_at = 3.0;
                 }
+                // Lotrecht × Nächster Punkt (T0243): waagerechte Vorlage für das Lot
+                // und eine zweite waagerechte Linie als Ziel. Der Zeiger rastet auf
+                // der **Kreuzung** beider Bedingungen ein — Prüfbild mit
+                // `x11-drive.py hover` auf (3000; 2500).
+                "lotkreuzung" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    self.session_mut()
+                        .execute("doc.settings", &serde_json::json!({ "input_unit": "mm" }))
+                        .unwrap();
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0], "b": [6000.0, 0.0], "layer": "Wände"
+                        }),
+                    );
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [1000.0, 2500.0], "b": [4500.0, 2500.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(3000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3000.0, 1400.0);
+                    v.zoom = 0.09;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 "tangential" => {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     // Frische Zeichnung: sie rechnet in Metern, die Punkte des
@@ -3531,6 +3578,15 @@ impl App {
                     self.waehle_dim_modus(DimModus::Waagerecht);
                     self.started_at = 3.0;
                 }
+                // Richtung während der Eingabe drehen (T0250): das Werkzeug
+                // läuft waagerecht, „Drehen“ schaltet auf senkrecht — die
+                // Vorschau zeigt die Kette in der neuen Richtung.
+                "masskettewechsel" => {
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    self.waehle_dim_modus(DimModus::Waagerecht);
+                    self.start_tool("modify.rotate");
+                    self.started_at = 3.0;
+                }
                 // Maßkette „Direkt“: zwei Messpunkte stehen, der nächste Klick
                 // setzt die Maßlinie parallel — die Vorschau hängt am Zeiger
                 // (Bildmitte).
@@ -3637,6 +3693,42 @@ impl App {
                     self.started_at = 3.0;
                     let mut v = self.current_view();
                     v.center = jjcad_core::geom::Vec2::new(2500.0, -450.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
+                // Höhenangaben unter einer Maßkette (T0253): die Angaben
+                // hängen am Abschnitt und stehen unter der Maßlinie.
+                // `hoehenangabewerkzeug` zeigt zusätzlich das offene Textfeld
+                // unter dem zweiten Abschnitt.
+                "hoehenangabe" | "hoehenangabewerkzeug" => {
+                    self.new_document();
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, -1.2], [2.0, -1.2],
+                                                    [3.6, -1.2], [6.0, -1.2]],
+                                            "line_pos": [3.0, -2.0], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 0, "text": "+3,00"}),
+                        );
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 2, "text": "+1,20"}),
+                        );
+                        self.session_mut().select(vec![id]);
+                        // Das Werkzeug-Bild zeigt das offene Feld unter dem
+                        // zweiten Abschnitt — wie nach dem Klick.
+                        if part.trim() == "hoehenangabewerkzeug" {
+                            crate::textedit::start_hoehe(self, id, 1);
+                        }
+                    }
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(3000.0, -1400.0);
                     v.zoom = 0.15;
                     self.set_view(v);
                 }
@@ -4041,6 +4133,39 @@ impl App {
                             t.pts = vec![jjcad_core::geom::Vec2::new(500.0, 500.0)];
                         }
                         self.session_mut().select(ids);
+                    }
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.fit_view();
+                }
+                // Knick einer Polylinie (T0247): die Ecke ist mit dem
+                // Scheitelpunkt schon gewählt, es fehlt nur das Maß.
+                "knick" | "abrundenknick" | "phaseknick" => {
+                    let u = self.unit().mm();
+                    let antwort = self.session_mut().execute(
+                        "draw.polyline",
+                        &serde_json::json!({
+                            "pts": [[500.0 / u, 500.0 / u], [4500.0 / u, 500.0 / u],
+                                    [4500.0 / u, 4500.0 / u]],
+                            "closed": false
+                        }),
+                    );
+                    let werkzeug = if part.trim() == "phaseknick" {
+                        "modify.chamfer"
+                    } else {
+                        "modify.fillet"
+                    };
+                    self.ui.ribbon = RibbonTab::Aendern;
+                    self.start_tool(werkzeug);
+                    if let Ok(r) = antwort {
+                        if let Some(id) = r["created"][0].as_u64() {
+                            if let Some(t) = self.tool.as_mut() {
+                                t.obj = Some(id);
+                                t.knoten = Some(1);
+                                t.pts = vec![jjcad_core::geom::Vec2::new(4500.0, 500.0)];
+                            }
+                            self.session_mut().select(vec![id]);
+                        }
                     }
                     self.ui.blatt_open = false;
                     self.ui.props_open = true;
@@ -5942,6 +6067,34 @@ impl App {
         Some(erste)
     }
 
+    /// T0250: „Drehen“ während einer laufenden Maßkette schaltet zwischen
+    /// waagerecht und senkrecht um.
+    ///
+    /// Der Werkzeugpuffer bleibt stehen — die Lage der Maßlinie und die
+    /// Messpunkte liegen in beiden Modi an derselben Stelle (`pts[0]` ist die
+    /// Maßlinie, alles Weitere Messpunkte). Der nächste Klick bzw. ESC legt die
+    /// Kette damit in der neuen Richtung an. Meldet, ob umgeschaltet wurde; ein
+    /// „Direkt“-Maß hat keine feste Richtung und bleibt unberührt.
+    fn masskette_drehen(&mut self) -> bool {
+        let Some(neu) = self
+            .tool
+            .as_ref()
+            .and_then(|t| DimModus::aus_werkzeug(&t.action))
+            .and_then(DimModus::gedreht)
+        else {
+            return false;
+        };
+        if let Some(t) = self.tool.as_mut() {
+            t.action = neu.werkzeug().to_string();
+        }
+        self.options.dim_axis = Some(neu.axis());
+        self.mitteilung(match neu {
+            DimModus::Senkrecht => jjcad_core::i18n::tr("gui.app.masskette_senkrecht"),
+            _ => jjcad_core::i18n::tr("gui.app.masskette_waagerecht"),
+        });
+        true
+    }
+
     pub fn start_tool(&mut self, id: &str) {
         if actions::action(id).is_none() {
             return;
@@ -5964,6 +6117,12 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        // T0250: Während eine Maßkette platziert wird, schaltet die Funktion
+        // „Drehen“ zwischen waagerecht und senkrecht um — sie startet nicht
+        // das Drehwerkzeug. Die gesetzten Punkte bleiben dabei stehen.
+        if id == "modify.rotate" && self.masskette_drehen() {
+            return;
         }
         // T0180: Eine neue Zeichenfunktion schließt das offene Kontextmenü. Der
         // Klick auf Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein
@@ -6001,6 +6160,7 @@ impl App {
             obj2: None,
             pick_a: None,
             pick_b: None,
+            knoten: None,
             selecting: self.session().selection.is_empty()
                 && matches!(
                     id,
@@ -9924,6 +10084,7 @@ impl App {
                     // Punkt anklicken — er kommt in die Kette bzw. geht heraus.
                     self.group(ui, "ribbon.group.massketten", |ui, app| {
                         for (id, icon) in [
+                            ("dim.height", "dim-height"),
                             ("dim.point.add", "point"),
                             ("dim.point.remove", "erase"),
                         ] {
@@ -11306,6 +11467,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         // Messpunkte ändern: erst die Maßkette, dann der Punkt (T0154).
+        // Höhenangabe (T0253): ein Klick auf den Abschnitt öffnet das Feld.
+        "dim.height" => jjcad_core::i18n::tr("gui.app.hoehenangabe_masskette_klicken"),
         "dim.point.add" => {
             if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_messpunkt_klicken")
@@ -11393,7 +11556,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         }
         // Abrunden und Phase (T0247): erst die zwei Linien, dann das Maß.
         "modify.fillet" => {
-            if tool.obj2.is_some() {
+            // Auch der Knick einer Polylinie ist eine fertige Ecke (T0247).
+            if tool.obj2.is_some() || tool.knoten.is_some() {
                 jjcad_core::i18n::tr("gui.app.abrunden_radius_klicken")
             } else if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.abrunden_zweite_linie_anklicken")
@@ -11402,7 +11566,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         "modify.chamfer" => {
-            if tool.obj2.is_some() {
+            if tool.obj2.is_some() || tool.knoten.is_some() {
                 jjcad_core::i18n::tr("gui.app.phase_mass_klicken")
             } else if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.phase_zweite_linie_anklicken")
@@ -15290,6 +15454,7 @@ mod tests_chat_texte {
                             obj2: None,
                             pick_a: None,
                             pick_b: None,
+                            knoten: None,
                             selecting,
                             phase,
                         });
@@ -15665,6 +15830,127 @@ mod tests_masskette_esc {
             app.selection(),
             &[id],
             "die bearbeitete Maßkette bleibt ausgewählt"
+        );
+    }
+}
+
+mod tests_masskette_drehen {
+    //! T0250: Während der Platzierung schaltet die Funktion „Drehen“
+    //! (`modify.rotate`) zwischen waagerecht und senkrecht um, statt das
+    //! Drehwerkzeug zu starten. Die gesetzten Punkte bleiben dabei stehen.
+
+    use super::*;
+    use jjcad_core::geom::v;
+
+    fn app_mit_kette(action: &str) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.start_tool(action);
+        if let Some(t) = app.tool.as_mut() {
+            t.pts.push(v(0.0, -900.0)); // Lage der Maßlinie
+            t.pts.push(v(0.0, 0.0));
+            t.pts.push(v(2000.0, 0.0));
+        }
+        app
+    }
+
+    /// Drehen schaltet den Modus um und lässt Maßlinie wie Messpunkte stehen;
+    /// ein zweiter Druck schaltet zurück.
+    #[test]
+    fn drehen_schaltet_die_richtung_und_behaelt_die_punkte() {
+        let mut app = app_mit_kette("dim.chain.h");
+        let vorher = app.tool.as_ref().unwrap().pts.clone();
+
+        app.start_tool("modify.rotate");
+        let t = app.tool.as_ref().expect("die Maßkette muss weiterlaufen");
+        assert_eq!(t.action, "dim.chain.v", "Drehen muss senkrecht machen");
+        assert_eq!(t.pts, vorher, "gesetzte Punkte bleiben stehen");
+        assert_eq!(
+            app.options.dim_axis,
+            Some(DimAxis::Y),
+            "das Panel zeigt die neue Richtung"
+        );
+
+        app.start_tool("modify.rotate");
+        assert_eq!(
+            app.tool.as_ref().unwrap().action,
+            "dim.chain.h",
+            "ein zweiter Druck schaltet zurück"
+        );
+        assert_eq!(app.options.dim_axis, Some(DimAxis::X));
+    }
+
+    /// Der erste Klick setzt die Lage der Maßlinie; danach gedreht, wird die
+    /// Kette in der neuen Richtung angelegt — gemessen am gespeicherten Winkel.
+    #[test]
+    fn die_gedrehte_kette_wird_senkrecht_angelegt() {
+        let mut app = app_mit_kette("dim.chain.h");
+        app.start_tool("modify.rotate");
+        app.escape_pressed();
+
+        let kette = app
+            .doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .expect("ESC muss die Maßkette anlegen");
+        match &kette.kind {
+            EntityKind::Dim { pts, angle, .. } => {
+                assert_eq!(pts.len(), 2, "{pts:?}");
+                assert!(
+                    (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+                    "die gedrehte Kette steht senkrecht, Winkel {angle}"
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Gegenprobe: „Direkt“ hat keine feste Richtung — dort startet Drehen
+    /// wie bisher das Drehwerkzeug (kein stiller Moduswechsel).
+    #[test]
+    fn direktes_mass_bleibt_unberuehrt() {
+        let mut app = app_mit_kette("dim.chain.d");
+        app.start_tool("modify.rotate");
+        assert_eq!(app.tool.as_ref().unwrap().action, "modify.rotate");
+    }
+
+    /// Der Weg des Nutzers: `R` ist die Vorgabe der Funktion „Drehen“, der
+    /// Druck läuft über `run_action` → `start_tool`. Geprüft am echten
+    /// Tastendruck über `App::ui` (derselbe Weg wie im Betrieb).
+    #[test]
+    fn die_taste_r_dreht_die_laufende_masskette() {
+        fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                events,
+                ..Default::default()
+            }
+        }
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.start_tool("dim.chain.h");
+        app.tool.as_mut().unwrap().pts = vec![v(0.0, -900.0), v(0.0, 0.0), v(2000.0, 0.0)];
+
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::Key {
+                key: egui::Key::R,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }]),
+            |ctx| app.ui(ctx),
+        );
+
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.action.as_str()),
+            Some("dim.chain.v"),
+            "R muss die Maßkette drehen, nicht das Drehwerkzeug starten"
         );
     }
 }

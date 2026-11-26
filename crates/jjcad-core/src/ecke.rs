@@ -172,13 +172,32 @@ pub fn ecke(
     if id_a == id_b {
         return Err("Es braucht zwei verschiedene Linien".into());
     }
-    if !(mass > 0.0) || !mass.is_finite() {
-        return Err("Das Maß muss größer als null sein".into());
-    }
     let (a1, a2) = linie(doc, id_a)?;
     let (b1, b2) = linie(doc, id_b)?;
     let punkt = line_line(a1, a2, b1, b2, true, true)
         .ok_or_else(|| "Die Linien sind parallel — keine Ecke".to_string())?;
+    ecke_aus_strahlen(punkt, (a1, a2), pick_a, (b1, b2), pick_b, mass, art)
+}
+
+/// Die reine Rechnung auf zwei Schenkeln: `punkt` ist die Ecke, `a` und `b`
+/// sind die beiden Geraden (wie gezeichnet, mit ihren Enden), `mass` das Maß.
+///
+/// Getrennt von [`ecke`], weil auch der **Knick einer Polylinie** zwei
+/// Schenkel hat: dort stehen die beiden Nachbarstrecken des Scheitelpunkts.
+pub fn ecke_aus_strahlen(
+    punkt: Vec2,
+    a: (Vec2, Vec2),
+    pick_a: Option<Vec2>,
+    b: (Vec2, Vec2),
+    pick_b: Option<Vec2>,
+    mass: f64,
+    art: EckeArt,
+) -> Result<Ecke, String> {
+    if !(mass > 0.0) || !mass.is_finite() {
+        return Err("Das Maß muss größer als null sein".into());
+    }
+    let (a1, a2) = a;
+    let (b1, b2) = b;
     let (behalten_a, dir_a) = schenkel_richtung(a1, a2, punkt, pick_a)?;
     let (behalten_b, dir_b) = schenkel_richtung(b1, b2, punkt, pick_b)?;
 
@@ -290,4 +309,164 @@ pub fn anwenden(
     doc.insert_ranked(ne);
     doc.modified = true;
     Ok((e, neu))
+}
+
+// ---------------------------------------------------------------------------
+// Knick einer Polylinie (T0247, Turn 3)
+// ---------------------------------------------------------------------------
+
+/// Die drei Punkte eines Polylinien-Knicks: Vorgänger, Scheitelpunkt, Nachfolger.
+///
+/// Bei einer **geschlossenen** Polylinie gibt es keinen Rand: der erste Punkt
+/// hat den letzten zum Vorgänger und umgekehrt.
+fn knick_punkte(verts: &[crate::geom::Vertex], closed: bool, knoten: usize) -> Result<(Vec2, Vec2, Vec2), String> {
+    let n = verts.len();
+    if n < 3 {
+        return Err("Die Polylinie hat keinen Knick".into());
+    }
+    if knoten >= n {
+        return Err("Diesen Knick gibt es nicht".into());
+    }
+    if !closed && (knoten == 0 || knoten + 1 == n) {
+        return Err("Das Ende einer Polylinie ist kein Knick — zwei Linien wählen".into());
+    }
+    let vor = (knoten + n - 1) % n;
+    let nach = (knoten + 1) % n;
+    Ok((verts[vor].p, verts[knoten].p, verts[nach].p))
+}
+
+/// Ist der Knick aus zwei **geraden** Stücken? Ein Bogenstück hat am
+/// Scheitelpunkt eine Tangente, nicht die Richtung seiner Sehne — die
+/// Abrundung eines solchen Knicks wäre eine andere Aufgabe.
+fn knick_ist_gerade(verts: &[crate::geom::Vertex], knoten: usize) -> Result<(), String> {
+    let n = verts.len();
+    let vor = (knoten + n - 1) % n;
+    // Der Bulge gehört zum Stück, das **an** diesem Punkt beginnt: `vor` trägt
+    // das ankommende, `knoten` das abgehende Stück.
+    if verts[vor].bulge.abs() > 1e-9 || verts[knoten].bulge.abs() > 1e-9 {
+        return Err("Der Knick liegt an einem Bogen — nur gerade Schenkel".into());
+    }
+    Ok(())
+}
+
+/// Nächster Knick einer Polylinie in Fangnähe — der Scheitelpunkt unter dem
+/// Zeiger, den ein Klick mit einem Schritt wählt.
+///
+/// Gesucht wird über die **Scheitelpunkte**, nicht über die Strecken: ein Klick
+/// mitten auf ein Stück meint keinen Knick.
+pub fn polylinien_knoten(doc: &Document, bei: Vec2, tol: f64) -> Option<(Id, usize, Vec2)> {
+    let mut best: Option<(f64, Id, usize, Vec2)> = None;
+    for e in doc.ents() {
+        let EntityKind::Polyline { verts, closed } = &e.kind else {
+            continue;
+        };
+        if !doc.layer_sichtbar(e.layer) || doc.layer_gesperrt(e.layer) {
+            continue;
+        }
+        let n = verts.len();
+        for (i, v) in verts.iter().enumerate() {
+            // Offene Enden und Knicke an Bogenstücken sind keine brauchbaren
+            // Ecken — sie werden gar nicht erst angeboten.
+            if !*closed && (i == 0 || i + 1 == n) {
+                continue;
+            }
+            let vor = (i + n - 1) % n;
+            if verts[vor].bulge.abs() > 1e-9 || v.bulge.abs() > 1e-9 {
+                continue;
+            }
+            let d = v.p.dist(bei);
+            if d <= tol && best.map(|(bd, ..)| d < bd).unwrap_or(true) {
+                best = Some((d, e.id, i, v.p));
+            }
+        }
+    }
+    best.map(|(_, id, i, p)| (id, i, p))
+}
+
+/// Alle Linien, die durch den Punkt laufen (Abstand höchstens `tol`), nach
+/// Abstand sortiert.
+///
+/// Das ist die Auswahl „direkt über den Schnittpunkt": liegen dort zwei Linien,
+/// bilden sie die Ecke ohne zweiten Klick.
+pub fn linien_durch(doc: &Document, bei: Vec2, tol: f64) -> Vec<Id> {
+    let mut treffer: Vec<(f64, Id)> = Vec::new();
+    for e in doc.ents() {
+        let EntityKind::Line { a, b } = &e.kind else {
+            continue;
+        };
+        if !doc.layer_sichtbar(e.layer) || doc.layer_gesperrt(e.layer) {
+            continue;
+        }
+        let d = crate::geom::dist_point_segment(bei, *a, *b);
+        if d <= tol {
+            treffer.push((d, e.id));
+        }
+    }
+    treffer.sort_by(|a, b| a.0.total_cmp(&b.0));
+    treffer.into_iter().map(|(_, id)| id).collect()
+}
+
+/// Rechnet den Knick einer Polylinie — **ohne** die Zeichnung zu ändern.
+///
+/// Die beiden Nachbarstücke sind die Schenkel, der Scheitelpunkt ist die Ecke.
+/// Welche Seite stehen bleibt, ist damit schon festgelegt (jedes Stück endet
+/// bzw. beginnt dort), ein Klickpunkt wird nicht gebraucht.
+pub fn ecke_polylinie(
+    doc: &Document,
+    id: Id,
+    knoten: usize,
+    mass: f64,
+    art: EckeArt,
+) -> Result<Ecke, String> {
+    let e = doc
+        .entity(id)
+        .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+    let EntityKind::Polyline { verts, closed } = &e.kind else {
+        return Err("Abrunden und Phase gehen an einer Polylinie nur am Knick".into());
+    };
+    knick_ist_gerade(verts, knoten)?;
+    let (vor, hier, nach) = knick_punkte(verts, *closed, knoten)?;
+    ecke_aus_strahlen(hier, (vor, hier), None, (hier, nach), None, mass, art)
+}
+
+/// Schreibt den Knick in die Polylinie: der Scheitelpunkt wird durch die beiden
+/// Anschlusspunkte ersetzt, dazwischen steht der Bogen (Abrunden) bzw. die
+/// Gerade (Phase) — alles in **einem** Objekt.
+pub fn anwenden_polylinie(
+    doc: &mut Document,
+    id: Id,
+    knoten: usize,
+    mass: f64,
+    art: EckeArt,
+) -> Result<Ecke, String> {
+    let e = ecke_polylinie(doc, id, knoten, mass, art)?;
+    // Bogenmaß des Verbindungsstücks: Richtung des Durchlaufs (vorwärts =
+    // positiv), damit das Stück in der Polylinie in Laufrichtung liegt.
+    // Der Bulge gehört zum Stück, das am **Anfangspunkt** des Bogens beginnt
+    // und in Laufrichtung läuft. Der Bogen aus `ecke` ist gegen den Uhrzeigersinn
+    // abgelegt; beginnt er am zweiten Anschluss, läuft das Stück andersherum.
+    let bulge = match e.bogen {
+        Some(arc) => {
+            let b = crate::geom::bulge_from_arc(&arc);
+            if arc.start().dist(e.t1) <= arc.start().dist(e.t2) {
+                b
+            } else {
+                -b
+            }
+        }
+        None => 0.0,
+    };
+    let Some(em) = doc.entity_mut(id) else {
+        return Err(format!("Objekt {id} nicht gefunden"));
+    };
+    let EntityKind::Polyline { verts, .. } = &mut em.kind else {
+        return Err("Keine Polylinie".into());
+    };
+    let neu = [
+        crate::geom::Vertex::arc(e.t1, bulge),
+        crate::geom::Vertex::new(e.t2),
+    ];
+    verts.splice(knoten..=knoten, neu);
+    doc.modified = true;
+    Ok(e)
 }

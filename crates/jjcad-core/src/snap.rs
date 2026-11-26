@@ -983,6 +983,16 @@ pub fn tangent_treffer(
 /// Punkt. Ein bewegtes Element steht in `ignore` und fängt deshalb nicht auf
 /// sich selbst.
 ///
+/// **Kombination mit „Nächster Punkt" (T0243)**: Kreuzt die Senkrechte eine
+/// **andere** Linie in Zeigernähe, tritt dieser Kreuzungspunkt an die Stelle
+/// des Fußpunkts. Der Fußpunkt allein liegt nur auf der neuen Linie (der
+/// Zeiger steht neben der anderen), der „Nächste Punkt" allein liegt nur auf
+/// der anderen Linie (er steht neben der Senkrechten) — gemeint ist beim
+/// Zeichnen aber der Punkt, der **beide** Bedingungen erfüllt. Er wird als
+/// Schnitt zweier Geraden gerechnet und ist damit exakt, nicht gerundet; die
+/// Fangart bleibt „Lotrecht", weil die Senkrechte den Punkt auszeichnet und
+/// die Marke am Bezugspunkt sitzt.
+///
 /// **Wände zählen mit ihrer Umgrenzung** (T0216, Turn 3), nicht nur mit der
 /// Achse: der Bezugspunkt darf auf einer Längs-, Stirn- oder Laibungskante
 /// liegen, gerechnet wird dann mit deren Richtung. An der langen Kante ist das
@@ -995,11 +1005,21 @@ pub fn lot_treffer(
     cursor: Vec2,
     tol: f64,
     ignore: &[Id],
+    mit_naechstem: bool,
 ) -> Vec<SnapHit> {
     let tol = tol.max(1e-6);
     let mut out: Vec<SnapHit> = Vec::new();
     let Some(r0) = reference else {
         return out;
+    };
+    // Ziele der Kombination: Segmente in **Zeigernähe** — dieselbe Auswahl, aus
+    // der „Nächster Punkt" seinen Fußpunkt nimmt (Objektgeometrie, Textrahmen,
+    // Wandumgrenzung mit „Wandkanten"). Ohne „Nächster Punkt" entfällt die
+    // Kombination und es bleibt beim Fußpunkt auf der Senkrechten.
+    let ziele: Vec<(Seg, Id)> = if mit_naechstem {
+        nahe_segmente(doc, cursor, tol, ignore)
+    } else {
+        Vec::new()
     };
     // Der Bezugspunkt muss **auf** einer Linie liegen; nur dort gibt es eine
     // Senkrechte, die beide Linien wirklich schneidet. Gesucht wird deshalb um
@@ -1048,6 +1068,21 @@ pub fn lot_treffer(
                 continue;
             }
             let senkrecht = ab.perp().normalized();
+            // **Kombination mit „Nächster Punkt" (T0243)**: Kreuzt die
+            // Senkrechte eine andere Linie im Fangradius, ist dieser
+            // Schnittpunkt der gemeinte — er erfüllt beide Bedingungen. Die
+            // gleiche Senkrechte liefert sonst ihren Fußpunkt unter dem Zeiger
+            // (nur auf der neuen Linie) oder der „Nächste Punkt" seinen
+            // Fußpunkt auf der anderen Linie (nur dort) — nie beides.
+            if let Some(p) = kreuzung_der_senkrechten(r0, senkrecht, cursor, tol, e.id, &ziele) {
+                out.push(SnapHit {
+                    point: p,
+                    kind: SnapKind::Lot,
+                    entity: Some(e.id),
+                    marke: Some(r0),
+                });
+                continue;
+            }
             let p = fuss_auf_gerade(cursor, r0, senkrecht);
             let d = p.dist(cursor);
             if d <= tol {
@@ -1063,6 +1098,47 @@ pub fn lot_treffer(
         }
     }
     out
+}
+
+/// Nächste Kreuzung der Senkrechten (Ursprung `r0`, Richtung `dir`) mit einer
+/// **fremden** Linie im Fangradius — die Kombination aus Lotrecht und
+/// „Nächster Punkt" (T0243).
+///
+/// Die eigene Quelllinie ist ausgenommen: sie schneidet die Senkrechte genau
+/// im Bezugspunkt, das ist keine Kreuzung mit einer anderen Linie. Ein
+/// Schnittpunkt auf dem Bezugspunkt selbst (Länge null) zählt ebenfalls nicht.
+fn kreuzung_der_senkrechten(
+    r0: Vec2,
+    dir: Vec2,
+    cursor: Vec2,
+    tol: f64,
+    quelle: Id,
+    ziele: &[(Seg, Id)],
+) -> Option<Vec2> {
+    if ziele.is_empty() {
+        return None;
+    }
+    let senkrechte = Hilfslinie {
+        origin: r0,
+        dir,
+        kind: SnapKind::Lot,
+    };
+    let mut best: Option<(f64, Vec2)> = None;
+    for (sg, id) in ziele {
+        if *id == quelle {
+            continue;
+        }
+        for p in gerade_schneidet_seg(&senkrechte, sg) {
+            if p.dist(r0) <= SNAP_DEDUP {
+                continue;
+            }
+            let d = p.dist(cursor);
+            if d <= tol && best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, p));
+            }
+        }
+    }
+    best.map(|(_, p)| p)
 }
 
 /// Sucht den besten Fangpunkt in der Nähe des Cursors.
@@ -1342,7 +1418,7 @@ fn snap_candidates_alle(
     // Bezugspunkt. Wie der Tangentialfang tritt er als Kandidat in dieselbe
     // Liste und wird nach denselben Regeln sortiert und entdoppelt.
     if s.lot {
-        for hit in lot_treffer(doc, reference, cursor, tol, ignore) {
+        for hit in lot_treffer(doc, reference, cursor, tol, ignore, s.nearest) {
             let d = hit.point.dist(cursor);
             if d > tol {
                 continue;
