@@ -76,6 +76,26 @@ fn hoehenangabe_haengt_am_abschnitt() {
 }
 
 #[test]
+fn gleicher_text_markiert_das_dokument_nicht() {
+    let mut d = doc_mm();
+    let id = kette(&mut d);
+    actions::execute(
+        &mut d,
+        "dim.height.set",
+        &json!({"ids": [id], "index": 1, "text": "+3,00"}),
+    )
+    .expect("Höhenangabe setzen");
+    d.modified = false;
+    actions::execute(
+        &mut d,
+        "dim.height.set",
+        &json!({"ids": [id], "index": 1, "text": "+3,00"}),
+    )
+    .expect("gleiche Höhenangabe");
+    assert!(!d.modified, "gleicher Text ändert die Datei nicht");
+}
+
+#[test]
 fn hoehenangabe_ueberlebt_das_speichern() {
     let mut d = doc_mm();
     let id = kette(&mut d);

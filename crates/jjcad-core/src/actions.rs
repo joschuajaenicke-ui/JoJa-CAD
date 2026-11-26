@@ -2738,6 +2738,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                         "dim.height.set · Abschnitt {idx} gibt es nicht (die Kette hat {abschnitte})"
                     ));
                 }
+                // Ohne Änderung bleibt das Dokument unberührt — ein Klick
+                // ohne Tippen darf die Datei nicht als geändert markieren.
+                if heights.get(idx).map(|s| s.as_str()).unwrap_or("") == text {
+                    return Ok(json!({"ok": true, "changed": [], "index": idx}));
+                }
                 if heights.len() < abschnitte {
                     heights.resize(abschnitte, String::new());
                 }
