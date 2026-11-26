@@ -5693,6 +5693,7 @@ mod tests {
                 override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
             },
         ),
         (
@@ -6056,6 +6057,7 @@ mod tests {
                 override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,

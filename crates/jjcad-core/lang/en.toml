@@ -262,6 +262,14 @@ label = "Add point"
 hint = "Click a measuring point — it leaves the chain"
 label = "Remove point"
 
+[action.dim.height]
+hint = "Click a dimension chain — height annotation below the segment"
+label = "Height note"
+
+[action.dim.height.set]
+hint = "Write the height annotation of a segment"
+label = "Set height note"
+
 [action.dim.elevation.plan]
 hint = "Click a point — height in the properties panel"
 label = "Plan level"
@@ -1040,6 +1048,7 @@ masskette_messpunkt_klicken_enter = "Dimension chain · click a point (Esc ends)
 masskette_zweiter_punkt = "Dimension chain · second measuring point"
 masskette_position_parallel_klicken = "Dimension chain · set the line (Esc ends)"
 punkt_hinzufuegen_messpunkt_klicken = "Add point · click a measuring point"
+hoehenangabe_masskette_klicken = "Height note · click a dimension chain or segment"
 punkt_hinzufuegen_masskette_klicken = "Add point · click a dimension chain"
 punkt_hinzufuegen_gesetzt = "Add point · done"
 punkt_entfernen_messpunkt_klicken = "Remove point · click a measuring point"
@@ -1966,6 +1975,10 @@ bilddaten = "Image data"
 
 
 [gui.textedit]
+hoehe_eingeben_esc_uebernimmt = "Height note · type the text (Esc applies)"
+hoehe_aendern_esc_uebernimmt = "Height note · edit (Esc applies)"
+hoehe_geaendert = "Height note · changed"
+hoehe_hinweis = "Esc applies · Enter confirms · right click cancels"
 esc_uebernimmt_hinweis = "Esc applies · Enter new line · right click cancels"
 text_abgebrochen = "Text · cancelled"
 text_geaendert = "Text · changed"

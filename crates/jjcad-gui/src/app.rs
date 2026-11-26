@@ -3623,6 +3623,42 @@ impl App {
                     v.zoom = 0.15;
                     self.set_view(v);
                 }
+                // Höhenangaben unter einer Maßkette (T0253): die Angaben
+                // hängen am Abschnitt und stehen unter der Maßlinie.
+                // `hoehenangabewerkzeug` zeigt zusätzlich das offene Textfeld
+                // unter dem zweiten Abschnitt.
+                "hoehenangabe" | "hoehenangabewerkzeug" => {
+                    self.new_document();
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, -1.2], [2.0, -1.2],
+                                                    [3.6, -1.2], [6.0, -1.2]],
+                                            "line_pos": [3.0, -2.0], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 0, "text": "+3,00"}),
+                        );
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 2, "text": "+1,20"}),
+                        );
+                        self.session_mut().select(vec![id]);
+                        // Das Werkzeug-Bild zeigt das offene Feld unter dem
+                        // zweiten Abschnitt — wie nach dem Klick.
+                        if part.trim() == "hoehenangabewerkzeug" {
+                            crate::textedit::start_hoehe(self, id, 1);
+                        }
+                    }
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(3000.0, -1400.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
                 // „Punkt hinzufügen“ mit gewählter Maßkette: der nächste Klick
                 // setzt den Messpunkt (zweiter Schritt, T0154 Turn 3).
                 "punktwerkzeug" => {
@@ -9906,6 +9942,7 @@ impl App {
                     // Punkt anklicken — er kommt in die Kette bzw. geht heraus.
                     self.group(ui, "ribbon.group.massketten", |ui, app| {
                         for (id, icon) in [
+                            ("dim.height", "dim-height"),
                             ("dim.point.add", "point"),
                             ("dim.point.remove", "erase"),
                         ] {
@@ -11288,6 +11325,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         // Messpunkte ändern: erst die Maßkette, dann der Punkt (T0154).
+        // Höhenangabe (T0253): ein Klick auf den Abschnitt öffnet das Feld.
+        "dim.height" => jjcad_core::i18n::tr("gui.app.hoehenangabe_masskette_klicken"),
         "dim.point.add" => {
             if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_messpunkt_klicken")

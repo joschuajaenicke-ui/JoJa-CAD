@@ -720,6 +720,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Entity::kann_punktsymbol` (Punkt/Linie) — sonst trüge die Kette zwei Symbole.
   Prüfweg: `cargo test -p jjcad-core --test masskette_symbol` und
   `cargo test -p jjcad-gui tests_masskette_symbol`; Prüfbild `--demo masskette`.
+- **Höhenangaben unter Maßketten (T0253)**: Jeder Abschnitt einer Maßkette kann
+  eine Höhenangabe tragen — ein einfaches Textfeld **unter** der Maßlinie (die
+  Maßzahl steht darüber). Gespeichert ist sie in `EntityKind::Dim::heights`
+  (`Vec<String>`, Index = Abschnitt, leere Einträge = keine Angabe,
+  `skip_serializing_if`), damit sie mit der Kette wandert und beim Entfernen
+  eines Messpunkts mit ihrem Abschnitt verschwindet. Geschrieben wird über
+  `dim.height.set` (`ids`, `index`, `text`), das Werkzeug `dim.height` (Ribbon
+  Bemaßung) öffnet nach einem Klick auf den Abschnitt das Feld; ein
+  **Doppelklick** auf eine vorhandene Angabe öffnet sie über
+  `textedit::start_hoehe` — derselbe Editor wie beim Text, einzeilig, Esc/Enter
+  übernimmt. Lage, Winkel und Ausrichtung stehen **einmal** in
+  `render::dim_hoehe_lagen` (Anzeige, Doppelklick
+  `render::dim_hoehe_unter_punkt`, Editor); die Abschnittswahl für den Klick
+  ist `render::dim_abschnitt_bei`. Vorschau von Ketten zeigt keine Höhen.
+  Prüfweg: `cargo test -p jjcad-core --test hoehenangaben`,
+  `cargo test -p jjcad-gui tests_hoehenangabe` und
+  `cargo test -p jjcad-gui tests_hoehe`; Prüfbilder `--demo hoehenangabe`
+  und `--demo hoehenangabewerkzeug`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine
