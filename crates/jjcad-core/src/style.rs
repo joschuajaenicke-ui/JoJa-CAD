@@ -515,6 +515,51 @@ impl FillPattern {
 }
 
 // ---------------------------------------------------------------------------
+// Wahl der Füllung (T0242)
+// ---------------------------------------------------------------------------
+
+/// Füllung eines Objekts im Eigenschaften-Panel: **keine**, die Vorgabe des
+/// Objekts oder eine Farbe.
+///
+/// Drei Zustände statt „Farbe oder nichts“: ohne Füllfarbe zeichnet eine Wand
+/// den Vorgabeton (grau) und eine Vollfläche die aufgehellte Linienfarbe — die
+/// Abwesenheit einer Farbe ist also **nicht** „keine Füllung“. Gespeichert
+/// wird das im eigenen Feld [`crate::model::EntityStyle::no_fill`], die Farbe
+/// bleibt in `fill`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Fuellung {
+    /// Füllfläche ganz aus — keine Fläche, kein Muster (nur die Umrandung).
+    Keine,
+    /// Vorgabe des Objekts: Wandton bzw. aufgehellte Linienfarbe.
+    Standard,
+    /// eine ausdrücklich gewählte Farbe
+    Farbe(Color),
+}
+
+impl Fuellung {
+    /// Die gespeicherte Füllung eines Objekts als Panel-Wahl.
+    pub fn aus_style(fill: Option<Color>, no_fill: bool) -> Fuellung {
+        if no_fill {
+            Fuellung::Keine
+        } else {
+            match fill {
+                Some(c) => Fuellung::Farbe(c),
+                None => Fuellung::Standard,
+            }
+        }
+    }
+
+    /// Die beiden Felder, in die diese Wahl geschrieben wird.
+    pub fn in_style(self) -> (Option<Color>, bool) {
+        match self {
+            Fuellung::Keine => (None, true),
+            Fuellung::Standard => (None, false),
+            Fuellung::Farbe(c) => (Some(c), false),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Papier
 // ---------------------------------------------------------------------------
 

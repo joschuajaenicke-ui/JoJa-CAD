@@ -6740,9 +6740,10 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
     };
     let w2s = |q: V2| world_to_screen(rect, view, q);
 
-    // Fläche andeuten — der Plan darunter bleibt lesbar
+    // Fläche andeuten — der Plan darunter bleibt lesbar. „Keine Füllung“
+    // (T0242) zeigt auch in der Vorschau keine Fläche.
     let screen: Vec<Pos2> = boundary.iter().map(|q| w2s(*q)).collect();
-    if !fill_too_thin(&screen) {
+    if !app.ui.pending.no_fill && !fill_too_thin(&screen) {
         let c = Palette::vorschau().gamma_multiply(0.14);
         for tri in triangulate(&screen) {
             p.add(Shape::convex_polygon(tri.to_vec(), c, Stroke::NONE));
@@ -6764,6 +6765,7 @@ fn draw_fill_ghost(app: &App, p: &Painter, rect: Rect, view: View, umriss: &[V2]
         },
     );
     e.style.fill = app.ui.pending.fill;
+    e.style.no_fill = app.ui.pending.no_fill;
     let mut dl = DisplayList::default();
     // Die Vorschau zeigt das Muster in derselben Auflösung wie die Zeichnung
     // (T0176) — sonst stünde bei kleiner Ansicht ein dichtes Schlaufenband
@@ -6827,6 +6829,7 @@ fn draw_paint_ghost(
         },
     );
     e.style.fill = app.ui.pending.fill;
+    e.style.no_fill = app.ui.pending.no_fill;
     let mut dl = DisplayList::default();
     // Die Vorschau zeigt das Muster in derselben Auflösung wie die Zeichnung
     // (T0176) — sonst stünde bei kleiner Ansicht ein dichtes Schlaufenband
@@ -8670,7 +8673,11 @@ fn run_mit_meldung(
                 }
             }
             if !o.contains_key("fill") {
-                if let Some(f) = pend.fill {
+                // „Keine Füllung“ (T0242) sticht die Farbe: die Action schaltet
+                // damit die Fläche ganz ab statt sie einzufärben.
+                if pend.no_fill {
+                    o.insert("fill".into(), serde_json::json!("keine"));
+                } else if let Some(f) = pend.fill {
                     o.insert("fill".into(), serde_json::json!(f.to_hex()));
                 }
             }
@@ -14917,6 +14924,51 @@ mod tests_massketten_farbe {
             })
             .cloned()
             .expect("keine Bemaßung angelegt")
+    }
+
+    /// T0242: „Keine Füllung“ im Eigenschaften-Panel erreicht die Erzeuger-
+    /// Action — und ohne den Schalter bleibt die Wand gefüllt.
+    #[test]
+    fn keine_fuellung_im_panel_erreicht_die_wand() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit Millimeter");
+        let wand = json!({
+            "a": [0.0, 0.0],
+            "b": [4000.0, 0.0],
+            "thickness": 300.0
+        });
+        let letzte_wand = |app: &App| {
+            app.doc()
+                .entities
+                .iter()
+                .rev()
+                .find(|e| matches!(e.kind, EntityKind::Wall { .. }))
+                .cloned()
+                .expect("Wand angelegt")
+        };
+
+        app.ui.pending.no_fill = true;
+        assert!(run(&mut app, "draw.wall", wand.clone()));
+        let ohne = letzte_wand(&app);
+        assert!(
+            ohne.style.no_fill,
+            "„Keine Füllung“ kommt an der Action an"
+        );
+        let dl = jjcad_core::render::render_document(&jjcad_core::render::RenderCtx::new(app.doc()));
+        assert!(
+            !dl.prims
+                .iter()
+                .any(|p| p.entity == ohne.id
+                    && matches!(p.shape, jjcad_core::render::Shape::Fill { .. })),
+            "die Wand zeichnet keine Fläche"
+        );
+
+        app.ui.pending.no_fill = false;
+        assert!(run(&mut app, "draw.wall", wand));
+        let mit = letzte_wand(&app);
+        assert!(!mit.style.no_fill, "ohne Schalter bleibt die Wand gefüllt");
     }
 
     fn ebene_name(app: &App, e: &Entity) -> String {

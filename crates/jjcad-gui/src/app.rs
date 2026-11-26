@@ -1036,6 +1036,9 @@ impl RibbonTab {
 pub struct PendingStyle {
     pub color: Option<jjcad_core::style::Color>,
     pub fill: Option<jjcad_core::style::Color>,
+    /// Füllung aus (T0242): das nächste Objekt bekommt keine Füllfläche.
+    /// Geht als `fill: "keine"` an die Erzeuger-Action.
+    pub no_fill: bool,
     pub lineweight: Option<f64>,
     pub line_type: Option<jjcad_core::style::LineType>,
     /// Dämmung (Linienart „Dämmung"): Bandhöhe H in mm
@@ -1058,6 +1061,7 @@ impl Default for PendingStyle {
         Self {
             color: None,
             fill: None,
+            no_fill: false,
             lineweight: None,
             line_type: None,
             loop_width: None,
@@ -3858,6 +3862,65 @@ impl App {
                     {
                         self.session_mut().select(vec![id]);
                     }
+                }
+                // Prüfhilfe T0242: zwei Wände mit Mauerwerk — die untere ohne
+                // Füllung; sie ist ausgewählt, das Panel zeigt den Zustand
+                // „Keine Füllung“.
+                "ohnefuellung" | "keinefuellung" => {
+                    let u = self.unit().mm();
+                    let mut letzte = None;
+                    for (y, ohne) in [(0.0_f64, false), (2000.0_f64, true)] {
+                        let mut p = serde_json::json!({
+                            "a": [0.0, y / u],
+                            "b": [4000.0 / u, y / u],
+                            "thickness": 300.0 / u,
+                            "hatch": "mauerwerk",
+                        });
+                        if ohne {
+                            p["fill"] = serde_json::json!("keine");
+                        }
+                        if let Ok(r) = self.session_mut().execute("draw.wall", &p) {
+                            letzte = r["created"][0].as_u64();
+                        }
+                    }
+                    if let Some(id) = letzte {
+                        self.session_mut().select(vec![id]);
+                    }
+                    // Das Eigenschaften-Panel soll im Bild stehen — der
+                    // Blattmanager belegt sonst die rechte Seite (T0233).
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.fit_view();
+                }
+                // Prüfhilfe T0242: zwei Füllflächen mit Mauerwerk — die rechte
+                // ohne Füllung (nur Umrandung); sie ist ausgewählt.
+                "flaecheohnefuellung" | "flaechekeinefuellung" => {
+                    let u = self.unit().mm();
+                    let mut letzte = None;
+                    for (x0, ohne) in [(0.0_f64, false), (3000.0_f64, true)] {
+                        let mut p = serde_json::json!({
+                            "boundary": [
+                                [x0 / u, 0.0],
+                                [(x0 + 2000.0) / u, 0.0],
+                                [(x0 + 2000.0) / u, 1500.0 / u],
+                                [x0 / u, 1500.0 / u],
+                            ],
+                            "pattern": "mauerwerk",
+                            "border": true,
+                        });
+                        if ohne {
+                            p["fill"] = serde_json::json!("keine");
+                        }
+                        if let Ok(r) = self.session_mut().execute("draw.fill", &p) {
+                            letzte = r["created"][0].as_u64();
+                        }
+                    }
+                    if let Some(id) = letzte {
+                        self.session_mut().select(vec![id]);
+                    }
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.fit_view();
                 }
                 "wall" => self.start_tool("draw.wall"),
                 "paint" | "farbeimer" => self.start_tool("draw.fill.paint"),
