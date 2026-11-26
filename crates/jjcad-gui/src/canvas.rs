@@ -2288,12 +2288,35 @@ fn draw_fadenkreuz(p: &Painter, rect: Rect, pos: Option<Pos2>) {
     p.line_segment(senkrecht, Stroke::new(1.0, c));
 }
 
+/// Schriftgröße des Feldes am Zeiger — eine Zahl für Längenanzeige und
+/// Längeneingabe, damit das Feld beim Tippen nicht springt (T0244).
+const ZEIGER_FELD_SCHRIFT: f32 = 12.0;
+
+/// Lage des Feldes am Zeiger (Bildschirmpunkte).
+///
+/// Das Feld steht **rechts oberhalb** des Fadenkreuzes: die Länge samt Winkel
+/// und die getippte Länge teilen sich diesen Platz (T0244), das Werkzeug-Icon
+/// bleibt rechts unterhalb (`werkzeug_zeiger_mitte`). Eine Quelle für Zeichnen
+/// und Test.
+pub fn zeiger_feld_pos(zeiger: Pos2) -> Pos2 {
+    zeiger + Vec2::new(14.0, -20.0)
+}
+
 /// Beschriftung am Zeiger (dunkle Box, heller Text).
 ///
 /// Eine Stelle für die Werkzeug-Vorschau — die Maßangabe beim Ziehen
 /// (`draw_grip_mass`) sieht genauso aus.
 fn paint_label(p: &Painter, rect: Rect, pos: Pos2, text: &str) {
-    let galley = p.layout_no_wrap(text.to_string(), FontId::proportional(11.0), Palette::text());
+    paint_label_betont(p, rect, pos, text, false);
+}
+
+/// Wie [`paint_label`], mit `betont` in der Akzentfarbe hervorgehoben.
+///
+/// So sieht dasselbe Feld aus, sobald eine Zahl getippt wird (T0244): Rahmen,
+/// Schrift und Hintergrund wechseln die Farbe, die Lage bleibt.
+fn paint_label_betont(p: &Painter, rect: Rect, pos: Pos2, text: &str, betont: bool) {
+    let farbe = if betont { Palette::accent() } else { Palette::text() };
+    let galley = p.layout_no_wrap(text.to_string(), FontId::proportional(ZEIGER_FELD_SCHRIFT), farbe);
     // Box im Zeichenbereich halten: am unteren/äußeren Rand würde sie sonst
     // abgeschnitten (Fehlermeldungen stehen genau dort, wo geklickt wird).
     let groesse = galley.size() + Vec2::new(12.0, 6.0);
@@ -2307,8 +2330,13 @@ fn paint_label(p: &Painter, rect: Rect, pos: Pos2, text: &str) {
     );
     let bg = Rect::from_min_size(min, groesse);
     p.rect_filled(bg, 4.0, Palette::hinweis_flaeche());
-    p.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::border()));
-    p.galley(bg.min + Vec2::new(6.0, 3.0), galley, Palette::text());
+    let rahmen = if betont { farbe } else { Palette::border() };
+    p.rect_stroke(
+        bg,
+        4.0,
+        Stroke::new(if betont { 1.4 } else { 1.0 }, rahmen),
+    );
+    p.galley(bg.min + Vec2::new(6.0, 3.0), galley, farbe);
 }
 
 /// Maßangabe einer Treppe für die Beschriftung am Zeiger:
@@ -2354,7 +2382,7 @@ fn draw_grip_mass(app: &App, ui: &Ui, p: &Painter, rect: Rect, view: View) {
     };
     let mass = jjcad_core::stair::treppenmass(a.dist(*b), *height, *steps, *auto_steps);
     let text = stair_mass_text(app.unit(), a.dist(*b), *width, mass.stufen);
-    paint_label(p, rect, pos + Vec2::new(14.0, -16.0), &text);
+    paint_label(p, rect, zeiger_feld_pos(pos), &text);
 }
 
 #[cfg(test)]
@@ -3233,7 +3261,7 @@ fn draw_tool_preview(
     let a = if let Some(l) = last { l } else { cursor };
 
     let mut label = String::new();
-    let mut label_pos = w2s(cursor) + Vec2::new(14.0, -16.0);
+    let mut label_pos = zeiger_feld_pos(w2s(cursor));
 
     match tool.action.as_str() {
         "draw.line" | "draw.wall" => {
@@ -4299,7 +4327,10 @@ fn draw_tool_preview(
         _ => {}
     }
 
-    if !label.is_empty() {
+    // Getippte Zahl? Dann zeigt das **eine** Feld am Zeiger den Tippstand in
+    // der Akzentfarbe (`handle_input` zeichnet es) — die graue Messung tritt
+    // zurück, sonst stünden zwei Felder übereinander (T0244).
+    if !label.is_empty() && app.ui.typed.is_empty() {
         paint_label(p, rect, label_pos, &label);
     }
 
@@ -5158,30 +5189,28 @@ fn handle_input(
         if !app.ui.typed.is_empty() {
             let pos = ctx.pointer_hover_pos().unwrap_or(rect.center());
             let text = app.ui.typed.clone();
-            let galley = painter.layout_no_wrap(
-                if text.contains(';') {
-                    format!("{}  [Enter] Punkt x;y", text)
-                } else if app
-                    .tool
-                    .as_ref()
-                    .map(|t| ist_drehwerkzeug(&t.action))
-                    .unwrap_or(false)
-                {
-                    // Beim Drehen ist die Zahl ein Winkel in Grad (T0151).
-                    jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_winkel", &[("eingabe", format!("{}", text))])
-                } else {
-                    jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_laenge", &[("eingabe", format!("{}", text))])
-                },
-                FontId::proportional(13.0),
-                Palette::accent(),
-            );
-            let bg = Rect::from_min_size(
-                pos + Vec2::new(16.0, 18.0),
-                galley.size() + Vec2::new(12.0, 6.0),
-            );
-            painter.rect_filled(bg, 4.0, Palette::hinweis_flaeche());
-            painter.rect_stroke(bg, 4.0, Stroke::new(1.0, Palette::accent()));
-            painter.galley(pos + Vec2::new(22.0, 21.0), galley, Palette::accent());
+            let feld = if text.contains(';') {
+                format!("{}  [Enter] Punkt x;y", text)
+            } else if app
+                .tool
+                .as_ref()
+                .map(|t| ist_drehwerkzeug(&t.action))
+                .unwrap_or(false)
+            {
+                // Beim Drehen ist die Zahl ein Winkel in Grad (T0151).
+                jjcad_core::i18n::t_args_owned("gui.canvas.x_enter_winkel", &[("eingabe", format!("{}", text))])
+            } else {
+                // Mit Einheit wie die graue Messung — beim Tippen verschwindet
+                // sonst die Bezugsgröße („1,5" wonach?) (T0244).
+                jjcad_core::i18n::t_args_owned(
+                    "gui.canvas.x_enter_laenge",
+                    &[("eingabe", format!("{} {}", text, app.unit().short()))],
+                )
+            };
+            // **Dasselbe** Feld wie die graue Messung, nur hervorgehoben: Lage
+            // rechts über dem Fadenkreuz, das Werkzeug-Icon bleibt rechts
+            // darunter frei (T0244).
+            paint_label_betont(painter, rect, zeiger_feld_pos(pos), &feld, true);
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             let typed = app.ui.typed.clone();
@@ -20099,5 +20128,159 @@ mod tests_png_bereich {
         assert!(app.ui.png_bereich.is_none(), "kein Bereich aus einer Linie");
         assert!(app.ui.png_wahl.is_some(), "die Wahl läuft weiter");
         assert!(!app.ui.png_export_offen, "das Fenster bleibt für die Wahl zurück");
+    }
+}
+
+#[cfg(test)]
+mod tests_zeigerfeld {
+    //! Das **eine** Feld am Fadenkreuz (T0244).
+    //!
+    //! Vorher standen am Zeiger drei Dinge übereinander: die graue Anzeige von
+    //! Länge und Winkel (rechts oben), die Tippeingabe (rechts unten) und das
+    //! Werkzeug-Icon (rechts unten) — Eingabefeld und Icon deckten sich.
+    //! Geprüft wird am gerenderten Bild: das Feld steht rechts **oberhalb** des
+    //! Fadenkreuzes und rührt das Icon nicht an; sobald eine Zahl getippt wird,
+    //! zeigt **dasselbe** Feld den Tippstand in der Akzentfarbe und die graue
+    //! Messung tritt zurück.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    fn rahmen(
+        ctx: &egui::Context,
+        app: &mut App,
+        zeiger: Option<Pos2>,
+        tippen: Option<&str>,
+    ) -> egui::FullOutput {
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        if let Some(t) = tippen {
+            raw.events.push(egui::Event::Text(t.to_string()));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Linienwerkzeug mit gesetztem Anfangspunkt — die Vorschau zeigt damit
+    /// die graue Messung (Länge und Winkel) am Zeiger.
+    fn app_mit_linienanfang(ctx: &egui::Context) -> App {
+        let mut app = App::with_ctx(ctx.clone());
+        assert!(
+            run(
+                &mut app,
+                "doc.settings",
+                json!({"input_unit": "mm", "snap": {
+                    "ortho": false, "polar": false, "grid": false,
+                    "endpoint": false, "midpoint": false, "center": false,
+                    "intersection": false, "perpendicular": false,
+                    "nearest": false, "wall_edges": false
+                }}),
+            ),
+            "Einstellungen nicht gesetzt"
+        );
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app
+    }
+
+    fn texte(out: &egui::FullOutput) -> Vec<(String, Rect, egui::Color32)> {
+        fn sammle(s: &egui::Shape, v: &mut Vec<(String, Rect, egui::Color32)>) {
+            match s {
+                egui::Shape::Text(t) => v.push((
+                    t.galley.text().to_string(),
+                    Rect::from_min_size(t.pos, t.galley.size()),
+                    t.fallback_color,
+                )),
+                egui::Shape::Vec(inner) => inner.iter().for_each(|s| sammle(s, v)),
+                _ => {}
+            }
+        }
+        let mut v = Vec::new();
+        for cs in &out.shapes {
+            sammle(&cs.shape, &mut v);
+        }
+        v
+    }
+
+    fn feld(out: &egui::FullOutput, teil: &str) -> Option<(String, Rect, egui::Color32)> {
+        texte(out)
+            .into_iter()
+            .find(|(t, _, _)| t.contains(teil))
+    }
+
+    /// Rechteck, in dem das Werkzeug-Icon am Zeiger sitzt (Kreis mit r = 12).
+    fn icon_rect(zeiger: Pos2) -> Rect {
+        Rect::from_center_size(werkzeug_zeiger_mitte(zeiger), Vec2::splat(24.0))
+    }
+
+    /// Die graue Messung steht rechts **über** dem Fadenkreuz und deckt das
+    /// Icon nicht zu.
+    #[test]
+    fn graue_anzeige_steht_ueber_dem_fadenkreuz_und_frei_vom_icon() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linienanfang(&ctx);
+        rahmen(&ctx, &mut app, None, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let zeiger = start + Vec2::new(140.0, -140.0);
+        let out = rahmen(&ctx, &mut app, Some(zeiger), None);
+
+        let (text, r) = feld(&out, "°").map(|(t, r, _)| (t, r)).expect("keine Messung am Zeiger");
+        assert!(text.contains("mm"), "die Messung nennt keine Länge: {text}");
+        assert!(r.left() >= zeiger.x, "Feld beginnt links vom Fadenkreuz: {r:?}");
+        assert!(r.bottom() <= zeiger.y, "Feld steht nicht über dem Fadenkreuz: {r:?}");
+        assert!(
+            !r.intersects(icon_rect(zeiger)),
+            "Feld und Werkzeug-Icon überlagern sich: {r:?}"
+        );
+    }
+
+    /// Getippte Zahl: dasselbe Feld, hervorgehoben, in der Akzentfarbe — und
+    /// **nur eins** statt Messung plus Eingabe.
+    #[test]
+    fn getippte_laenge_steht_im_selben_feld_hervorgehoben() {
+        let ctx = egui::Context::default();
+        let mut app = app_mit_linienanfang(&ctx);
+        rahmen(&ctx, &mut app, None, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let zeiger = start + Vec2::new(140.0, -140.0);
+
+        let grau = rahmen(&ctx, &mut app, Some(zeiger), None);
+        let (_, grau_rect, grau_farbe) = feld(&grau, "°").expect("keine graue Messung");
+        assert_eq!(grau_farbe, Palette::text(), "die Messung ist nicht grau");
+
+        let out = rahmen(&ctx, &mut app, Some(zeiger), Some("1"));
+        assert!(app.ui.typed == "1", "der Tipppuffer nimmt die Ziffer nicht: {:?}", app.ui.typed);
+
+        let (text, tipp_rect, farbe) = feld(&out, "[Enter]").expect("kein Eingabefeld");
+        assert!(
+            text.starts_with("1 ") && text.contains("mm"),
+            "das Feld zeigt nicht die getippte Länge: {text}"
+        );
+        assert_eq!(farbe, Palette::accent(), "das Feld ist nicht hervorgehoben");
+        // Im Tippframe hat die Vorschau die graue Messung noch gezeichnet
+        // (sie läuft vor der Eingabe); im Bild darauf ist sie weg.
+        let nach = rahmen(&ctx, &mut app, Some(zeiger), None);
+        assert_eq!(
+            texte(&nach).iter().filter(|(t, _, _)| t.contains('°')).count(),
+            0,
+            "die graue Messung steht daneben weiter"
+        );
+        assert!(
+            (grau_rect.min - tipp_rect.min).length() < 1.0,
+            "Tippeingabe steht nicht am Platz der Messung: {grau_rect:?} gegen {tipp_rect:?}"
+        );
+        assert!(tipp_rect.bottom() <= zeiger.y, "Feld steht nicht über dem Fadenkreuz");
+        assert!(
+            !tipp_rect.intersects(icon_rect(zeiger)),
+            "Tippfeld und Werkzeug-Icon überlagern sich: {tipp_rect:?}"
+        );
     }
 }

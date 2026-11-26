@@ -104,6 +104,9 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    weiter, der Dauerlauf fährt 720 px/s (T0146, 50 % mehr als vorher).
 7. **Länge tippen**: nach dem ersten Klick Ziffern eingeben, `Enter` übernimmt den Abstand —
    oder `x;y` für absolute Koordinaten (Semikolon trennt, Komma ist Dezimalzeichen: `2,5;3,0`).
+   Länge und Winkel stehen dabei im **einen** Feld rechts über dem Fadenkreuz: ohne Eingabe grau
+   als Messung, mit getippter Zahl hervorgehoben samt Einheit. Das Werkzeug-Icon bleibt rechts
+   darunter.
 8. **Auswählen**: Klick wählt ein Objekt, `Umschalt`+Klick ergänzt. Ziehen von links nach rechts
    wählt vollständig umschlossene Objekte (Fenster), von rechts nach links auch geschnittene
    (Querfenster). `Strg+C` / `Strg+X` / `Strg+V` kopieren, schneiden aus und fügen 20 mm versetzt ein.
