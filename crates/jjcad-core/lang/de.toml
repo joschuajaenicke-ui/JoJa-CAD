@@ -217,6 +217,14 @@ label = "Verlängern"
 hint = "Zwei Linien oder Wände anklicken — sie treffen sich im Schnittpunkt"
 label = "Verschneiden"
 
+[action.modify.fillet]
+hint = "Zwei Linien anklicken, dann Radius klicken oder tippen"
+label = "Abrunden"
+
+[action.modify.chamfer]
+hint = "Zwei Linien anklicken, dann Maß klicken oder tippen"
+label = "Phase"
+
 [action.modify.area.union]
 hint = "Zwei oder mehr angrenzende Füllflächen auswählen — sie werden eine"
 label = "Flächen vereinigen"
@@ -1152,6 +1160,14 @@ verschieben_basispunkt_klicken = "Verschieben · Basispunkt klicken"
 verschieben_objekte_waehlen_enter = "Verschieben · Objekte wählen (Enter)"
 verschieben_zielpunkt_klicken = "Verschieben · Zielpunkt klicken"
 verschneiden_ecke_gesetzt = "Verschneiden · Ecke gesetzt"
+abrunden_erste_linie_anklicken = "Abrunden · erste Linie anklicken"
+abrunden_zweite_linie_anklicken = "Abrunden · zweite Linie anklicken"
+abrunden_radius_klicken = "Abrunden · Radius klicken oder tippen"
+phase_erste_linie_anklicken = "Phase · erste Linie anklicken"
+phase_zweite_linie_anklicken = "Phase · zweite Linie anklicken"
+phase_mass_klicken = "Phase · Maß klicken oder tippen"
+ecke_abgerundet = "Ecke · abgerundet"
+ecke_phase_gesetzt = "Ecke · Phase gesetzt"
 verschneiden_erstes_objekt_anklicken = "Verschneiden · erstes Objekt anklicken"
 verschneiden_zweites_objekt_anklicken = "Verschneiden · zweites Objekt anklicken"
 versetzen_objekt_anklicken = "Versetzen · Objekt anklicken"
@@ -1196,6 +1212,10 @@ beenden = "Beenden"
 kommandozeile = "Alternativ von der Kommandozeile: jjcad --daten-dir <Pfad>"
 
 [gui.canvas]
+ecke_zwei_linien = "Ecke · zwei verschiedene Linien"
+ecke_keine_linie = "Ecke · nur mit Linien"
+ecke_kein_schnitt = "Ecke · Linien schneiden sich nicht"
+ecke_mass_zu_gross = "Ecke · Maß zu groß"
 png_bereich_diagonale = "PNG · Diagonale klicken"
 png_bereich_zweiter_punkt = "PNG · zweiten Eckpunkt klicken"
 png_bereich_ohne_flaeche = "PNG · Diagonale ohne Fläche"
