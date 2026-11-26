@@ -3169,13 +3169,8 @@ pub(crate) fn pfad_vorschau(tool: &Tool, cursor: V2, tol: f64) -> PfadVorschau {
     };
     if tool.schritte.last() == Some(&PfadSchritt::ArcPoint) && tool.pts.len() >= 2 {
         let von = tool.pts[tool.pts.len() - 2];
-        return match Arc::from_3_points(von, letzt, cursor) {
-            Some(arc) => PfadVorschau::Bogen(jjcad_core::pfad::PathSeg::Arc {
-                c: arc.c,
-                r: arc.r,
-                a0: arc.a0,
-                a1: arc.a1,
-            }),
+        return match jjcad_core::pfad::arc_aus_3_punkten(von, letzt, cursor) {
+            Some(arc) => PfadVorschau::Bogen(arc),
             // Drei Punkte auf einer Geraden: der Klick legt eine Linie an.
             None => PfadVorschau::Sehne {
                 von,

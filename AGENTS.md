@@ -821,7 +821,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
   (`pfad_verbinden`), sonst bleibt alles stehen und es gibt einen Fehler. Ein
   geschlossener Pfad umschließt eine **Fläche** (`pfad_flaeche`, Panel-Zeile „Fläche“);
-  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. Ribbon: Polylinie
+  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. **Laufrichtung
+  von Bögen (T0248)**: `PathSeg::Arc`/`EllipseArc` tragen `rev`; `a0`→`a1` ist
+  immer der geometrische Ausschnitt (Gegenuhrzeigersinn), `rev` sagt, ob das Stück
+  umgekehrt durchlaufen wird. Anfang und Ende eines Bogens dürfen **nie** durch
+  vertauschte Winkel ausgedrückt werden — das ergäbe den Gegenbogen (der Bogen
+  sprang beim Verbinden auf die andere Seite des Kreises). `PathSeg::reversed`
+  kippt nur `rev`, `start`/`end`/`flatten` werten es aus, gespiegelt wird es
+  mitgekippt. Ribbon: Polylinie
   und Pfad teilen sich eine geteilte Schaltfläche, sonst überschreitet der Reiter
   „Zeichnen“ die Mindestbreite. Prüfweg: `cargo test -p jjcad-core --test pfad` und
   `cargo test -p jjcad-gui tests_pfad`; Prüfbild `--demo "neudatei,pfad"`.

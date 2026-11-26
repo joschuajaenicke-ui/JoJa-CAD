@@ -307,7 +307,7 @@ fn write_entity(out: &mut W, doc: &Document, e: &Entity, block_ctx: Option<&str>
                         out.p(10, *a, 0.0);
                         out.p(11, *b, 0.0);
                     }
-                    crate::pfad::PathSeg::Arc { c, r, a0, a1 } => {
+                    crate::pfad::PathSeg::Arc { c, r, a0, a1, .. } => {
                         out.g(0, "ARC");
                         out.g(8, &layer);
                         if let Some(cc) = color {

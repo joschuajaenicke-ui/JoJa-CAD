@@ -3497,7 +3497,9 @@ fn render_path(
                 entity: e.id,
                 layer: e.layer,
             }),
-            crate::pfad::PathSeg::Arc { c, r, a0, a1 } => {
+            // Die Laufrichtung (`rev`) ist für das Bild unerheblich: gezeichnet
+            // wird der Ausschnitt zwischen `a0` und `a1`.
+            crate::pfad::PathSeg::Arc { c, r, a0, a1, .. } => {
                 let (aa, ab) = if mirror { (-*a1, -*a0) } else { (*a0, *a1) };
                 dl.push(Prim {
                     shape: Shape::Arc {
@@ -3518,6 +3520,7 @@ fn render_path(
                 rot: er,
                 a0,
                 a1,
+                ..
             } => {
                 let (aa, ab, r) = if mirror {
                     (-*a1, -*a0, rot - *er)
