@@ -9724,6 +9724,10 @@ impl App {
                     });
                 }
                 RibbonTab::Aendern => {
+                    // Mit „Abrunden" und „Phase" (T0247) trägt die Gruppe
+                    // „Geometrie" neun Schaltflächen; der engere Abstand hält
+                    // den Reiter bei der Standardbreite 1500 px zusammen.
+                    ui.spacing_mut().item_spacing.x = 2.0;
                     self.group(ui, "ribbon.group.bearbeiten", |ui, app| {
                         for (id, icon) in RIBBON_BEARBEITEN {
                             let label = aktion_label(id);
@@ -14920,11 +14924,13 @@ mod tests_vollbild {
     }
 
     /// Der Reiter „Ändern" ist **breiter als die Mindestfensterbreite** — wie
-    /// „Start" schon vor ihm (gemessen 1660 px bei 1080 px Fenster, seit T0247
-    /// mit „Abrunden" und „Phase" in der Gruppe „Geometrie"; davor 1520 px).
-    /// Der Test hält den Ist-Stand als Riegel: ein weiterer Knopf fällt sofort
-    /// auf. Bei der Standard-Fensterbreite 1500 px ist alles bis auf das Ende
-    /// sichtbar; es gibt keinen horizontalen Scrollweg.
+    /// „Start" schon vor ihm. Gemessen: 1660 px mit dem Standardabstand und
+    /// 1584 px mit 2 px (seit T0247 „Abrunden" und „Phase" in der Gruppe
+    /// „Geometrie" stehen; davor 1513 px). Der engere Abstand (`item_spacing.x`
+    /// im Ändern-Zweig) holt einen Teil zurück. Bei der Standardfensterbreite
+    /// schneidet die letzte Gruppe („Rückgängig/Wiederholen") rechts ab — die
+    /// beiden Knöpfe stehen zusätzlich in der Kopfzeile. Der Test hält den
+    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf.
     #[test]
     fn reiter_aendern_bleibt_in_seiner_breite() {
         let ctx = egui::Context::default();
@@ -14940,8 +14946,8 @@ mod tests_vollbild {
             breite = app.ui.last_ribbon_content_w;
         }
         assert!(
-            breite <= 1660.0,
-            "Reiter Ändern braucht {breite} px (Riegel 1660) — ein Knopf mehr schneidet rechts ab"
+            breite <= 1584.0,
+            "Reiter Ändern braucht {breite} px (Riegel 1584) — ein Knopf mehr schneidet rechts ab"
         );
     }
 
