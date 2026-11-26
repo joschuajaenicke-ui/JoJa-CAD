@@ -666,6 +666,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   verwerfen: `App::escape_pressed` schickt die Maßketten-Werkzeuge in
   `finish_tool` (ohne einen Klick bricht Esc ab), das Punktwerkzeug endet ohne
   die Auswahl zu leeren.
+- **Radiusbemaßung (T0252)**: Ein Kreis oder Bogen lässt sich mit `dim.radius`
+  bemaßen — eine **eigene Objektart** `EntityKind::DimRadius { c, r, angle,
+  override_text }` (nicht eine Maßkette mit Sonderfall: sie hat keine
+  Messpunkte, sondern Mittelpunkt, Radius und eine Richtung). Angetippt wird
+  der **Kreis oder Bogen**; die Richtung der Maßlinie ist die Richtung vom
+  Mittelpunkt zum Klickpunkt (roher Zeiger, nicht der Fangpunkt — der läge auf
+  Mittelpunkt oder Quadrant), `angle` (Grad) setzt sie ausdrücklich. Gezeichnet
+  wird in `render::render_dim_radius`: Maßlinie vom Mittelpunkt zum Bogenpunkt,
+  Marke dort nach `DimStyle::arrow`, Mittelpunktkreuz und die Maßzahl „R …“
+  außerhalb des Kreises; `render::preview_dim_radius` ist dieselbe Anzeige für
+  die Vorschau. Trefferflächen kommen wie bei der Maßkette aus `trefferbild`.
+  Einsatz und Standardebene „Beschriftung“; Griffe: Mittelpunkt (verschiebt)
+  und Bogenpunkt (dreht die Richtung, der Radius bleibt). Der Radius ist eine
+  **Anzeige** — geändert wird er am bemaßten Kreis; Maßtext und Richtung stehen
+  im Eigenschaften-Panel (`props::radiusbemassung`). Andere Objektarten sind
+  ein Fehler (T0038). Prüfweg: `cargo test -p jjcad-core --test
+  radien_bemassen` und `cargo test -p jjcad-gui tests_radiusmass`; Prüfbild
+  `--demo radiusmass`.
 - **Orientierung der Maßkette (T0166)**: Eine Maßkette hat **eine** Orientierung
   — `Dim::angle` (Bogenmaß, Richtung der Maßlinie). Waagerecht (0°) und senkrecht
   (π/2) sind nur zwei Winkel desselben Objekts; `DimAxis` ist seitdem **keine
@@ -820,9 +838,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
   (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
   bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  **Der Punkt trägt beide Zeichen** (Turn 4): `SnapHit::zusatz`/`SnapResolution::zusatz`
+  nennt die zweite erfüllte Fangart — am Kreuzungspunkt `SnapKind::Intersection`. Die
+  Zeichenfläche zeichnet sie zusätzlich (`FangZeichen::mit`, mittig auf dem Fangpunkt,
+  unabhängig vom Schalter „Schnittpunkt“: das Zeichen erklärt, warum der Punkt exakt ist),
+  das Winkelquadrat des Lots bleibt am Bezugspunkt; die Statuszeile nennt weiter nur
+  `kind` („Lotrecht“).
   Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `kreuzung_traegt_den_schnittpunkt_als_zusatz`,
   `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
-  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen) und
+  `cargo test -p jjcad-gui kreuzungsfang_zeigt` (beide Zeichen; Gegenprobe: das zusätzliche
+  Zeichnen entfernt, Test rot).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem

@@ -256,6 +256,23 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             crate::render::dim_reihenfolge(&mut kind);
             kind
         }
+        // Radiusbemaßung: Mittelpunkt wandert mit, die Richtung dreht wie die
+        // Maßkette (gespiegelt 2θ − φ, T0166), der Radius skaliert.
+        EntityKind::DimRadius {
+            c,
+            r,
+            angle,
+            override_text,
+        } => EntityKind::DimRadius {
+            c: m.apply(*c),
+            r: r * m.scale_factor(),
+            angle: if m.is_mirrored() {
+                m.rotation() - *angle
+            } else {
+                *angle + m.rotation()
+            },
+            override_text: override_text.clone(),
+        },
         EntityKind::ElevationPlan { p, z, text_pos } => EntityKind::ElevationPlan {
             p: m.apply(*p),
             z: *z,

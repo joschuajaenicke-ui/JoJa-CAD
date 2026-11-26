@@ -76,6 +76,12 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Punktsymbol und steht in Messrichtung; die Maßlinie endet **genau am
    äußeren Basispunkt** — den Abschluss markiert die Marke, nicht ein
    Überstand der Linie.
+   **Radius** (Ribbon ▸ Bemaßung ▸ „Radius"): einen **Kreis oder Bogen**
+   anklicken. Die Maßlinie läuft vom Mittelpunkt zum Bogenpunkt, ihre Richtung
+   bestimmt der **Klickpunkt**; die Maßzahl „R …" steht außerhalb des Kreises.
+   Maßtext und Richtung stehen im Eigenschaften-Panel (Gruppe „Maß"). Das
+   Werkzeug bleibt für weitere Radien aktiv, `Esc` beendet es; ein Klick neben
+   Kreis und Bogen legt nichts an.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`
@@ -438,7 +444,9 @@ ausgeblendet.
   **Mit „Nächster Punkt“ zusammen** (T0243): Kreuzt die Senkrechte eine andere Linie in
   Zeigernähe, wird deren **Schnittpunkt** gefangen — der Punkt liegt dann auf der
   Senkrechten *und* auf der anderen Linie. So endet eine lotrechte Linie genau dort, wo sie
-  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung.
+  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung. Angezeigt
+  werden **beide Zeichen**: das Winkelquadrat des Lots am Bezugspunkt und das Kreuz des
+  Schnittpunkts auf dem Fangpunkt.
   Prüfweg: `cargo test -p jjcad-core --test lot_fang` (22 Tests, prüfen das Skalarprodukt
   der beiden Richtungen gegen 0, die Lage der Marke, die Wandkanten und die Kreuzung mit
   einer anderen Linie).

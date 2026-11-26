@@ -160,6 +160,12 @@ pub struct SnapHit {
     /// Punkt am Zeiger ist (auf der Tangente bzw. der neue Kreismittelpunkt).
     /// `None` heißt: die Marke sitzt auf `point`.
     pub marke: Option<Vec2>,
+    /// Zweite Fangart, die dieser Punkt **ebenfalls** erfüllt (T0243): der
+    /// Kreuzungspunkt aus Lotrecht und „Nächster Punkt" ist beides — lotrecht
+    /// auf der einen und Punkt der anderen Linie. Die Zeichenfläche zeichnet
+    /// dafür das Zeichen dieser Art mit (`snapmarke`), die Statuszeile nennt
+    /// weiter `kind`.
+    pub zusatz: Option<SnapKind>,
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +450,7 @@ pub fn winkelhalbierende_treffer(
                     kind: SnapKind::Bisector,
                     entity: None,
                     marke: None,
+                    zusatz: None,
                 });
             }
         }
@@ -748,6 +755,7 @@ fn hilfslinien_snap_innen(
                 kind: t.kind,
                 entity: t.entity,
                 marke: None,
+                zusatz: None,
             });
         }
     }
@@ -814,6 +822,7 @@ fn hilfslinien_snap_innen(
                 kind: t.kind,
                 entity: t.entity,
                 marke: None,
+                zusatz: None,
             });
         }
     }
@@ -891,6 +900,7 @@ pub fn tangent_treffer(
                     entity: Some(e.id),
                     // Die Linie berührt den Kreis dort, wo sie beginnt.
                     marke: Some(r0),
+                    zusatz: None,
                 });
             }
         }
@@ -951,6 +961,7 @@ pub fn tangent_treffer(
                                 // `q` ist der neue Mittelpunkt; berührt wird
                                 // die Linie an seinem Fußpunkt auf ihr.
                                 marke: Some(a + ab * t),
+                                zusatz: None,
                             });
                         }
                     }
@@ -1080,6 +1091,10 @@ pub fn lot_treffer(
                     kind: SnapKind::Lot,
                     entity: Some(e.id),
                     marke: Some(r0),
+                    // Erfüllt beide Bedingungen: lotrecht **und** auf der
+                    // anderen Linie — die Zeichenfläche zeichnet deshalb auch
+                    // das Zeichen des Schnittpunkts (T0243, Turn 4).
+                    zusatz: Some(SnapKind::Intersection),
                 });
                 continue;
             }
@@ -1093,6 +1108,7 @@ pub fn lot_treffer(
                     // Beide Linien schneiden sich im Bezugspunkt — dort sitzt
                     // das Zeichen für den rechten Winkel.
                     marke: Some(r0),
+                    zusatz: None,
                 });
             }
         }
@@ -1281,6 +1297,7 @@ fn snap_candidates_alle(
                 kind,
                 entity,
                 marke: None,
+                zusatz: None,
             },
         ));
     };
@@ -1572,6 +1589,9 @@ pub struct SnapResolution {
     /// Tangente zusammen; das Zeichen gehört aber an den **Berührpunkt** von
     /// Linie und Kreis — also dorthin, wo die Linie den Kreis berührt.
     pub marke: Option<Vec2>,
+    /// Zweite Fangart, die derselbe Punkt ebenfalls erfüllt (T0243) — siehe
+    /// [`SnapHit::zusatz`]. Die Zeichenfläche zeichnet beide Zeichen.
+    pub zusatz: Option<SnapKind>,
 }
 
 impl SnapResolution {
@@ -1743,6 +1763,7 @@ pub fn snap_constrained_achsen(
             point: hit.point,
             source: SnapSource::Object(hit.kind),
             marke: hit.marke,
+            zusatz: hit.zusatz,
         };
     }
 
@@ -1761,6 +1782,7 @@ pub fn snap_constrained_achsen(
                 point: hit.point,
                 source: SnapSource::Object(hit.kind),
                 marke: hit.marke,
+                zusatz: hit.zusatz,
             };
         }
     }
@@ -1771,6 +1793,7 @@ pub fn snap_constrained_achsen(
             point: hit.point,
             source: SnapSource::Object(hit.kind),
             marke: hit.marke,
+            zusatz: hit.zusatz,
         };
     }
 
@@ -1837,6 +1860,7 @@ pub fn snap_constrained_achsen(
                     point: gp,
                     source: SnapSource::Object(SnapKind::Grid),
                     marke: None,
+                    zusatz: None,
                 };
             }
         }
@@ -1845,6 +1869,7 @@ pub fn snap_constrained_achsen(
         point,
         source,
         marke: None,
+        zusatz: None,
     }
 }
 
@@ -2047,6 +2072,7 @@ fn hit_test_opt(
         if matches!(
             e.kind,
             EntityKind::Dim { .. }
+                | EntityKind::DimRadius { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         ) {
@@ -2296,6 +2322,7 @@ pub fn select_window(doc: &Document, a: Vec2, b: Vec2, crossing: bool) -> Vec<Id
         if matches!(
             e.kind,
             EntityKind::Dim { .. }
+                | EntityKind::DimRadius { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         ) {

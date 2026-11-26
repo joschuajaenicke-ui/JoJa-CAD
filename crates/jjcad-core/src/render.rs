@@ -1690,6 +1690,26 @@ pub fn render_entity(
                 dl,
             );
         }
+        // Radiusbemaßung (T0252): Maßlinie vom Mittelpunkt zum Bogenpunkt,
+        // Marke dort und die Maßzahl außerhalb des Kreises.
+        EntityKind::DimRadius {
+            c,
+            r,
+            angle,
+            override_text,
+        } => {
+            render_dim_radius(
+                ctx,
+                e,
+                &st,
+                *c,
+                *r,
+                *angle,
+                override_text.as_deref(),
+                xf,
+                dl,
+            );
+        }
         // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
         // gefüllt; der Höhenwert steht je nach `text_pos` oben (Vorgabe),
         // unten, links oder rechts daneben und gehört zum Symbol (T0196).
@@ -5098,6 +5118,216 @@ fn render_dim_chain(
 }
 
 // ---------------------------------------------------------------------------
+// Radiusbemaßung (T0252)
+// ---------------------------------------------------------------------------
+
+/// Bogenpunkt einer Radiusbemaßung: der Punkt auf dem Kreis, den die Maßlinie
+/// trifft.
+pub fn dim_radius_punkt(c: Vec2, r: f64, angle: f64) -> Vec2 {
+    c + Vec2::polar(angle, r)
+}
+
+/// Maßzahl einer Radiusbemaßung samt Läufen — „R“ und der Wert nach Tabelle 4
+/// (Hochzahl des halben Zentimeters wie bei der Maßkette).
+fn dim_radius_runs(r: f64, doc: &Document, resolve: bool) -> (String, Vec<TextRun>) {
+    let (haupt, hoch) = dim_zahl(r, doc.settings.dim_unit);
+    let haupt = format!("R {haupt}");
+    let haupt: String = if resolve {
+        doc.resolve_text(&haupt)
+    } else {
+        haupt
+    };
+    let mut runs = vec![TextRun::plain(haupt.clone())];
+    let text = match hoch {
+        Some(h) => {
+            runs.push(TextRun {
+                text: h.clone(),
+                superscript: true,
+                ..Default::default()
+            });
+            format!("{haupt}{h}")
+        }
+        None => haupt,
+    };
+    (text, runs)
+}
+
+/// Zeichnet eine Radiusbemaßung: Maßlinie vom Mittelpunkt zum Bogenpunkt,
+/// Marke dort, Mittelpunktkreuz und die Maßzahl an der Verlängerung außerhalb
+/// des Kreises.
+#[allow(clippy::too_many_arguments)]
+fn render_dim_radius(
+    ctx: &RenderCtx,
+    e: &Entity,
+    st: &PrimStyle,
+    c: Vec2,
+    r: f64,
+    angle: f64,
+    override_text: Option<&str>,
+    xf: Affine,
+    dl: &mut DisplayList,
+) {
+    if !(r > 0.0) {
+        return;
+    }
+    let style = &ctx.doc.dim_style;
+    let a = ctx.a(1.0);
+    let arrow = ctx.a(style.arrow_size);
+    let text_h = ctx.a(style.text_height);
+    let marke = ctx.a(style.text_height * DIM_MARKE_H);
+    let dir = Vec2::polar(angle, 1.0);
+    let n = dir.perp();
+    let p_arc = dim_radius_punkt(c, r, angle);
+    // Maßzahl: eigener Text ersetzt die ganze Zeile (wie bei der Maßkette).
+    let (txt, runs) = match override_text {
+        Some(t) => {
+            let t = if ctx.resolve_text {
+                ctx.doc.resolve_text(t)
+            } else {
+                t.to_string()
+            };
+            (t.clone(), vec![TextRun::plain(t)])
+        }
+        None => dim_radius_runs(r, ctx.doc, ctx.resolve_text),
+    };
+    let text_w = estimate_text_width(&txt, text_h);
+    let mut text_angle = angle;
+    if text_angle > std::f64::consts::FRAC_PI_2 + 0.01
+        || text_angle < -std::f64::consts::FRAC_PI_2 - 0.01
+    {
+        text_angle += std::f64::consts::PI;
+    }
+
+    // Maßlinie vom Mittelpunkt zum Bogenpunkt — sie endet **am** Bogen, die
+    // Marke sitzt dort.
+    dl.push(Prim {
+        shape: Shape::Line(xf.apply(c), xf.apply(p_arc)),
+        style: *st,
+        entity: e.id,
+        layer: e.layer,
+    });
+    // Verlängerung über den Bogen hinaus bis zum Text; das Textfeld steht
+    // außerhalb des Kreises, damit die Maßzahl die Zeichnung nicht verdeckt.
+    let text_pos = p_arc + dir * (marke * 0.5 + a + text_w * 0.5);
+    let leader_end = text_pos - dir * (text_w * 0.5 + a);
+    if (leader_end - p_arc).len() > 0.01 {
+        dl.push(Prim {
+            shape: Shape::Line(xf.apply(p_arc), xf.apply(leader_end)),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+    // Marke am Bogenpunkt: Pfeil zeigt nach außen auf den Bogen, Punkt und
+    // Schrägstrich folgen dem Stil wie bei der Maßkette.
+    match style.arrow {
+        ArrowKind::Arrow => {
+            let tri = vec![
+                xf.apply(p_arc),
+                xf.apply(p_arc - dir * arrow + n * (arrow * 0.22)),
+                xf.apply(p_arc - dir * arrow - n * (arrow * 0.22)),
+            ];
+            dl.push(Prim {
+                shape: Shape::Poly(tri, true),
+                style: PrimStyle {
+                    color: st.color,
+                    fill: Some(st.color),
+                    ..*st
+                },
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+        ArrowKind::Dot => {
+            dl.push(Prim {
+                shape: Shape::Dot {
+                    p: xf.apply(p_arc),
+                    r: arrow * 0.3,
+                },
+                style: PrimStyle {
+                    color: st.color,
+                    fill: Some(st.color),
+                    ..*st
+                },
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+        ArrowKind::Slash => {
+            // 45° zur Maßlinie, wie der Begrenzungsstrich der Maßkette.
+            let s = Vec2::polar(angle + std::f64::consts::FRAC_PI_4, marke * 0.5);
+            dl.push(Prim {
+                shape: Shape::Line(xf.apply(p_arc - s), xf.apply(p_arc + s)),
+                style: *st,
+                entity: e.id,
+                layer: e.layer,
+            });
+        }
+        ArrowKind::None => {}
+    }
+    // Mittelpunktkreuz — die Bemaßung zeigt damit, wovon sie misst.
+    let arm = marke * 0.6;
+    for d in [dir, n] {
+        dl.push(Prim {
+            shape: Shape::Line(xf.apply(c - d * arm), xf.apply(c + d * arm)),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+    // Maßzahl an der Verlängerung, außerhalb des Kreises.
+    dl.push(Prim {
+        shape: Shape::Text(TextPrim {
+            pos: xf.apply(text_pos),
+            text: txt,
+            height: text_h * xf.scale_factor(),
+            angle: text_angle + xf.rotation(),
+            align: TextAlignH::Center,
+            valign: TextAlignV::Bottom,
+            bold: false,
+            italic: false,
+            underline: false,
+            superscript: false,
+            runs,
+            font: TextFont::DinMittel,
+            line_spacing: 1.0,
+        }),
+        style: *st,
+        entity: e.id,
+        layer: e.layer,
+    });
+}
+
+/// Vorschau einer Radiusbemaßung — das **fertige** Objekt für einen Kreis, der
+/// noch keine Bemaßung trägt (T0252). Dieselbe Quelle wie die eingefügte
+/// Bemaßung (`render_entity`).
+pub fn preview_dim_radius(
+    doc: &Document,
+    c: Vec2,
+    r: f64,
+    angle: f64,
+    layer: Id,
+    color: Option<Color>,
+) -> DisplayList {
+    let mut e = Entity::new(
+        0,
+        layer,
+        EntityKind::DimRadius {
+            c,
+            r,
+            angle,
+            override_text: None,
+        },
+    );
+    // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
+    e.style.color = Some(color.unwrap_or(Color::BLACK));
+    let ctx = RenderCtx::new(doc);
+    let mut dl = DisplayList::default();
+    render_entity(&ctx, &e, Affine::IDENTITY, &mut dl, 0);
+    dl
+}
+
+// ---------------------------------------------------------------------------
 // Blatt (Papierraum)
 // ---------------------------------------------------------------------------
 
@@ -5325,6 +5555,11 @@ fn entity_segments_tief(doc: &Document, e: &Entity, skala: f64, depth: usize) ->
             // den Basispunkten ist unsichtbar und deshalb keine Trefferfläche.
             out.extend(trefferbild(doc, e).segmente);
         }
+        // Radiusbemaßung zeichnet versetzt (Maßlinie radial, Text außerhalb) —
+        // die Trefferflächen kommen wie bei der Maßkette aus der Anzeige.
+        EntityKind::DimRadius { .. } => {
+            out.extend(trefferbild(doc, e).segmente);
+        }
         EntityKind::Stair {
             a,
             b,
@@ -5467,6 +5702,8 @@ pub fn entity_centers(doc: &Document, e: &Entity) -> Vec<Vec2> {
         EntityKind::Dim { pts, .. } if pts.len() >= 2 => {
             vec![(pts[0] + *pts.last().unwrap()) * 0.5]
         }
+        // Der Mittelpunkt der Radiusbemaßung ist der Kreismittelpunkt.
+        EntityKind::DimRadius { c, .. } => vec![*c],
         _ => vec![],
     }
 }

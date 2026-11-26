@@ -2723,6 +2723,90 @@ mod tests_fangmarke {
         );
     }
 
+    /// Kombination Lotrecht × „Nächster Punkt" (T0243, Turn 4): am
+    /// Kreuzungspunkt stehen **beide** Zeichen — das Winkelquadrat des Lots am
+    /// Bezugspunkt und das Kreuz des Schnittpunkts auf dem Fangpunkt. Vorher
+    /// war nur das Lotzeichen zu sehen.
+    #[test]
+    fn kreuzungsfang_zeigt_lot_und_schnittpunkt() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.session_mut()
+            .execute("doc.settings", &json!({"input_unit": "mm"}))
+            .unwrap();
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [4000.0, 0.0]})
+        ));
+        assert!(run(
+            &mut app,
+            "draw.line",
+            json!({"a": [1000.0, 1500.0], "b": [4000.0, 1500.0]})
+        ));
+        // Lot und „Nächster Punkt" an, alles andere aus — die Kreuzung ist
+        // dann der einzige Fang in Reichweite.
+        app.session_mut()
+            .execute(
+                "doc.settings",
+                &json!({"snap": {
+                    "grid": false, "ortho": false, "polar": false,
+                    "nearest": true, "midpoint": false, "perpendicular": false,
+                    "intersection": false, "endpoint": false, "center": false,
+                    "tangent": false, "lot": true
+                }}),
+            )
+            .unwrap();
+        app.ui.show_grid = false;
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(2000.0, 0.0));
+        let mut v = app.current_view();
+        v.center = V2::new(2000.0, 900.0);
+        v.zoom = 0.1;
+        app.set_view(v);
+        rahmen(&ctx, &mut app, None);
+
+        let flaeche = app.ui.last_canvas;
+        let bezug = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, 0.0));
+        let kreuz = world_to_screen(flaeche, app.current_view(), V2::new(2000.0, 1500.0));
+        assert!(
+            flaeche.contains(bezug) && flaeche.contains(kreuz),
+            "Bezugspunkt oder Kreuzung liegt nicht im Bild"
+        );
+
+        // Zeiger 1 px neben der Kreuzung.
+        let out = rahmen(&ctx, &mut app, Some(kreuz + Vec2::new(1.0, 1.0)));
+        let ss = strecken(&out);
+        // Lotzeichen: Winkelquadrat mit Scheitel im Bezugspunkt, versetzt.
+        let o = bezug + FangArt::Objekt(jjcad_core::snap::SnapKind::Lot).versatz();
+        assert!(
+            hat_strecke(&ss, Pos2::new(o.x - 9.0, o.y), o),
+            "Lotmarke fehlt am Bezugspunkt"
+        );
+        // Schnittpunktzeichen: zwei Diagonalen ±6,5 px um den Fangpunkt.
+        let d1 = (
+            Pos2::new(kreuz.x - 6.5, kreuz.y - 6.5),
+            Pos2::new(kreuz.x + 6.5, kreuz.y + 6.5),
+        );
+        let d2 = (
+            Pos2::new(kreuz.x - 6.5, kreuz.y + 6.5),
+            Pos2::new(kreuz.x + 6.5, kreuz.y - 6.5),
+        );
+        assert!(
+            hat_strecke(&ss, d1.0, d1.1) && hat_strecke(&ss, d2.0, d2.1),
+            "Schnittpunktmarke fehlt am Kreuzungspunkt ({d1:?} / {d2:?})"
+        );
+        // Gegenprobe: das Kreuz steht nicht am Bezugspunkt des Lots.
+        let e = (
+            Pos2::new(bezug.x - 6.5, bezug.y - 6.5),
+            Pos2::new(bezug.x + 6.5, bezug.y + 6.5),
+        );
+        assert!(
+            !hat_strecke(&ss, e.0, e.1),
+            "Schnittpunktmarke sitzt am Bezugspunkt statt an der Kreuzung"
+        );
+    }
+
     fn strecken_mit_farbe(out: &egui::FullOutput) -> Vec<([Pos2; 2], egui::epaint::ColorMode)> {
         out.shapes
             .iter()
@@ -2940,11 +3024,20 @@ fn draw_cursor(
             // Kreis statt am Zeigerpunkt (T0211) — deshalb `zeichen.ort`. Der
             // Versatz der Art rückt sie dort leicht neben den Punkt, damit das
             // Zeichen ihn nicht zudeckt (T0211, Turn 3).
-            Some(zeichen) => crate::snapmarke::zeichne(
-                p,
-                world_to_screen(rect, view, zeichen.ort) + zeichen.art.versatz(),
-                zeichen.art,
-            ),
+            Some(zeichen) => {
+                crate::snapmarke::zeichne(
+                    p,
+                    world_to_screen(rect, view, zeichen.ort) + zeichen.art.versatz(),
+                    zeichen.art,
+                );
+                // Erfüllt der Punkt eine zweite Fangart, steht deren Zeichen
+                // zusätzlich mittig auf ihm (T0243, Turn 4) — beim Kreuzungspunkt
+                // aus Lotrecht und „Nächster Punkt" also das Kreuz des
+                // Schnittpunkts.
+                if let Some(mit) = zeichen.mit {
+                    crate::snapmarke::zeichne(p, s + mit.versatz(), mit);
+                }
+            }
             // Kein Fang: der Zeigerpunkt selbst, wie bisher als kleines Kreuz.
             None => {
                 let r = 5.0;
@@ -3304,6 +3397,13 @@ pub fn vorschau_punkt(app: &App, zeiger: Option<V2>) -> Option<V2> {
         return Some(w);
     }
     Some(start + richtung * laenge)
+}
+
+/// Beschriftung am Zeiger beim Radiusmaß — „R“ und der Wert in der
+/// Eingabeeinheit. `Unit::format_plain` nimmt **Millimeter** und rechnet selbst
+/// um; ein zweites `from_mm` davor machte aus 1,50 m ein „R 0,00“ (T0252).
+fn radius_label(unit: jjcad_core::units::Unit, r_mm: f64) -> String {
+    format!("R {}", unit.format_plain(r_mm, unit.decimals()))
 }
 
 fn draw_tool_preview(
@@ -4110,6 +4210,37 @@ fn draw_tool_preview(
                     unit.format_plain(start.dist(cursor), unit.decimals()),
                     unit.short()
                 );
+            }
+        }
+        // Radiusbemaßung (T0252): die Vorschau ist das **fertige** Objekt für
+        // den Kreis unter dem Zeiger; die Richtung folgt dem Zeiger.
+        "dim.radius" => {
+            if let Some(r) = raw {
+                let tol = fang_radius_px(app, view.zoom);
+                let kreis = snap::hit_test(app.doc(), r, tol, None).and_then(|id| {
+                    app.doc().entity(id).and_then(|e| match &e.kind {
+                        EntityKind::Circle { c, r } => Some((*c, *r)),
+                        EntityKind::Arc { c, r, .. } => Some((*c, *r)),
+                        _ => None,
+                    })
+                });
+                if let Some((c, radius)) = kreis {
+                    let d = r - c;
+                    let angle = if d.len() < 1e-6 { 0.0 } else { d.angle() };
+                    let dl = render::preview_dim_radius(
+                        app.doc(),
+                        c,
+                        radius,
+                        angle,
+                        app.werkzeug_ziel_ebene("Beschriftung"),
+                        app.ui.pending.color,
+                    );
+                    paint_vorschau_dl(app, p, view, &w2s, &dl);
+                    label = radius_label(unit, radius);
+                }
+            }
+            if label.is_empty() {
+                label = jjcad_core::i18n::tr("gui.app.radius_kreis_oder_bogen").to_string();
             }
         }
         // Messpunkt an eine **bestehende** Maßkette hängen bzw. herausnehmen
@@ -4995,6 +5126,11 @@ pub struct FangZeichen {
     pub art: FangArt,
     /// Ort der Marke in Weltkoordinaten.
     pub ort: V2,
+    /// Zweite Fangart, die derselbe Punkt ebenfalls erfüllt (T0243): die
+    /// Kreuzung aus Lotrecht und „Nächster Punkt" ist zugleich ein
+    /// Schnittpunkt. Sie wird zusätzlich gezeichnet — mittig auf dem
+    /// Fangpunkt, damit beide Zeichen sichtbar bleiben.
+    pub mit: Option<FangArt>,
 }
 
 /// Wie [`fang_zeiger`], gibt aber zusätzlich die **Art** des Fangs zurück.
@@ -5016,6 +5152,7 @@ fn fang_zeiger_art(
         snap::SnapSource::Object(k) => Some(FangZeichen {
             art: FangArt::Objekt(k),
             ort: res.marke.unwrap_or(res.point),
+            mit: res.zusatz.map(FangArt::Objekt),
         }),
         snap::SnapSource::Polar | snap::SnapSource::Ortho | snap::SnapSource::Free => None,
     };
@@ -5044,6 +5181,7 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
                     point: p,
                     source: snap::SnapSource::Object(snap::SnapKind::DimParallel),
                     marke: None,
+                    zusatz: None,
                 };
             }
         }
@@ -5090,6 +5228,7 @@ fn fang_aufloesung(app: &App, w: V2, tol: f64) -> snap::SnapResolution {
                     point: f,
                     source: snap::SnapSource::Object(snap::SnapKind::Tracking),
                     marke: None,
+                    zusatz: None,
                 };
             }
         }
@@ -8479,6 +8618,30 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
             }
         }
+        // Radiusbemaßung (T0252): Kreis oder Bogen anklicken. Gemessen wird
+        // am **rohen** Klickpunkt (der Fang läge auf Mittelpunkt oder
+        // Quadrant) — er bestimmt die Richtung der Maßlinie.
+        "dim.radius" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            let treffer = snap::hit_test(app.doc(), raw, tol, None).filter(|id| {
+                app.doc()
+                    .entity(*id)
+                    .map(|e| matches!(e.kind, EntityKind::Circle { .. } | EntityKind::Arc { .. }))
+                    .unwrap_or(false)
+            });
+            match treffer {
+                Some(id) => {
+                    let _ = run(
+                        app,
+                        "dim.radius",
+                        json!({"ids": [id], "p": ax(raw)}),
+                    );
+                }
+                None => app.toast(
+                    jjcad_core::i18n::tr("gui.app.radius_kreis_oder_bogen").to_string(),
+                ),
+            }
+        }
         // Höhenangabe unter einer Maßkette (T0253): **ein** Klick auf die
         // Kette, danach steht das Textfeld unter dem getroffenen Abschnitt
         // (Esc/Enter übernimmt). Ein Doppelklick auf eine vorhandene Angabe
@@ -8503,8 +8666,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
                     }
                 }
-                None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
-            }
+                None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),            }
         }
         "dim.elevation.plan" => {
             let z = app.options.elevation_z;
@@ -8995,6 +9157,7 @@ fn ist_erzeuger(action: &str) -> bool {
             action,
             "dim.linear"
                 | "dim.chain"
+                | "dim.radius"
                 | "dim.elevation.plan"
                 | "dim.elevation.section"
                 | "dim.room"
@@ -11841,6 +12004,7 @@ mod tests_fang_griff {
             EntityKind::Text { .. } => "Text",
             EntityKind::Room { .. } => "Raumstempel",
             EntityKind::Dim { .. } => "Bemaßung",
+            EntityKind::DimRadius { .. } => "Radiusmaß",
             EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
             EntityKind::ElevationSection { .. } => "Schnitt-Kote",
             EntityKind::Wall { .. } => "Wand",
@@ -21086,6 +21250,111 @@ mod tests_laengenvorschau {
     }
 }
 
+#[cfg(test)]
+mod tests_radiusmass {
+    //! Radiusbemaßung (T0252): Kreis anklicken, der Klick bestimmt die
+    //! Richtung der Maßlinie. Geprüft wird der Klickweg (`tool_click_at`) und
+    //! der Griff am Bogenpunkt — dieselbe Funktion wie die Maus.
+
+    use super::*;
+
+    fn app_mit_kreis() -> (App, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.circle",
+            json!({"c": [1000.0, 1000.0], "r": 500.0}),
+        );
+        let id = *app.session().last_created.first().expect("Kreis");
+        (app, id)
+    }
+
+    fn masse(app: &App) -> Option<(V2, f64, f64)> {
+        app.doc().ents().iter().find_map(|e| match &e.kind {
+            EntityKind::DimRadius { c, r, angle, .. } => Some((*c, *r, *angle)),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn klick_auf_kreis_setzt_das_radiusmass() {
+        let (mut app, _) = app_mit_kreis();
+        app.start_tool("dim.radius");
+        let klick = V2::new(1500.0, 1000.0);
+        tool_click_at(&mut app, klick, klick);
+        let (c, r, angle) = masse(&app).expect("kein Radiusmaß angelegt");
+        assert!(c.dist(V2::new(1000.0, 1000.0)) < 1e-6, "{c:?}");
+        assert!((r - 500.0).abs() < 1e-9);
+        assert!(angle.abs() < 1e-9, "Winkel {angle}");
+    }
+
+    #[test]
+    fn richtung_folgt_dem_klickpunkt() {
+        let (mut app, _) = app_mit_kreis();
+        app.start_tool("dim.radius");
+        // Klick senkrecht über dem Mittelpunkt.
+        let klick = V2::new(1000.0, 1500.0);
+        tool_click_at(&mut app, klick, klick);
+        let (_, _, angle) = masse(&app).expect("kein Radiusmaß");
+        assert!(
+            (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+            "Winkel {angle}"
+        );
+    }
+
+    /// Der Wert am Zeiger steht in der Eingabeeinheit — nicht doppelt
+    /// umgerechnet (`from_mm` + `format_plain` ergäbe „R 0,00“).
+    #[test]
+    fn beschriftung_am_zeiger_nennt_den_radius_in_der_einheit() {
+        use jjcad_core::units::Unit;
+        assert_eq!(radius_label(Unit::M, 1500.0), "R 1,50");
+        assert_eq!(radius_label(Unit::Cm, 1500.0), "R 150,0");
+    }
+
+    #[test]
+    fn klick_daneben_legt_kein_mass_an() {
+        let (mut app, _) = app_mit_kreis();
+        app.start_tool("dim.radius");
+        let klick = V2::new(3000.0, 3000.0);
+        tool_click_at(&mut app, klick, klick);
+        assert!(masse(&app).is_none(), "Maß ohne Kreis entstanden");
+    }
+
+    #[test]
+    fn griff_am_bogenpunkt_dreht_die_masslinie() {
+        let (mut app, _) = app_mit_kreis();
+        app.start_tool("dim.radius");
+        let klick = V2::new(1500.0, 1000.0);
+        tool_click_at(&mut app, klick, klick);
+        let id = app
+            .doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::DimRadius { .. }))
+            .map(|e| e.id)
+            .expect("Bemaßung");
+        let orig = app.doc().entity(id).cloned().expect("Bemaßung");
+        let neu = crate::handles::apply_grip(
+            &orig,
+            crate::handles::GripKind::Vert(1),
+            V2::new(1000.0, 1500.0),
+        )
+        .expect("Griffzug");
+        match neu.kind {
+            EntityKind::DimRadius { angle, r, .. } => {
+                assert!((r - 500.0).abs() < 1e-9, "Radius wandert: {r}");
+                assert!(
+                    (angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+                    "Winkel {angle}"
+                );
+            }
+            k => panic!("kein Radiusmaß: {k:?}"),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests_hoehenangabe {
     //! T0253: Das Werkzeug „Höhenangabe“ öffnet unter dem angeklickten
     //! Abschnitt ein Textfeld; geschrieben wird über `dim.height.set`.
@@ -21166,6 +21435,5 @@ mod tests_hoehenangabe {
         app.start_tool("dim.height");
         tool_click(&mut app, V2::new(4000.0, 3000.0));
         assert!(app.ui.texteingabe.is_none(), "nirgends eine Maßkette");
-        assert_eq!(app.tool_id(), Some("dim.height"), "das Werkzeug läuft weiter");
-    }
+        assert_eq!(app.tool_id(), Some("dim.height"), "das Werkzeug läuft weiter");    }
 }
