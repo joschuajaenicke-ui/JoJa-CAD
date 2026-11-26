@@ -3030,15 +3030,26 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 EckeArt::Phase
             };
             let ids = ids_from(&p, "ids");
-            if ids.len() < 2 {
-                return Err("Abrunden und Phase brauchen zwei Linien".into());
-            }
             let mass = p
                 .len(art.mass_name())
                 .or_else(|| p.len("mass"))
                 .or_else(|| p.len("radius"))
                 .or_else(|| p.len("distance"))
                 .ok_or_else(|| "Parameter 'radius' bzw. 'distance' fehlt".to_string())?;
+            // Knick einer Polylinie (T0247): **ein** Objekt und der Scheitelpunkt.
+            if let (Some(id), Some(knoten)) = (ids.first().copied(), p.num("vertex")) {
+                let e = crate::ecke::anwenden_polylinie(doc, id, knoten as usize, mass, art)?;
+                return Ok(json!({
+                    "ok": true,
+                    "changed": [id],
+                    "point": [e.punkt.x / 1000.0, e.punkt.y / 1000.0],
+                    "mass": e.mass,
+                    "leg": e.schenkel
+                }));
+            }
+            if ids.len() < 2 {
+                return Err("Abrunden und Phase brauchen zwei Linien oder eine Polylinie mit Knick".into());
+            }
             let picks = p.pts("picks").unwrap_or_default();
             let (e, neu) = crate::ecke::anwenden(
                 doc,

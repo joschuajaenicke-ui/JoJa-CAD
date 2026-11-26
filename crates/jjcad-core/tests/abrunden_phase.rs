@@ -2,7 +2,7 @@
 //! Ecke mit Bogen bzw. mit gerader Fase. Geprüft wird die gespeicherte
 //! Geometrie — Endpunkte beider Linien, Mittelpunkt und Winkel des Bogens.
 
-use jjcad_core::ecke::{ecke, EckeArt};
+use jjcad_core::ecke::{ecke, linien_durch, polylinien_knoten, EckeArt};
 use jjcad_core::geom::{v, Vec2};
 use jjcad_core::model::{EntityKind, Id};
 use jjcad_core::session::Session;
@@ -193,4 +193,126 @@ fn unbrauchbare_ecken_sind_fehler() {
         &json!({"ids": [a, kreis], "distance": 0.1}),
     );
     assert!(falsch.is_err(), "ein Kreis ist keine Linie");
+}
+
+// ---------------------------------------------------------------------------
+// Polylinie und Auswahl über den Schnittpunkt (T0247, Turn 3)
+// ---------------------------------------------------------------------------
+
+fn polylinie(s: &mut Session, pts: &[[f64; 2]], closed: bool) -> Id {
+    s.execute("draw.polyline", &json!({"pts": pts, "closed": closed}))
+        .expect("Polylinie anlegen");
+    s.doc.entities.last().unwrap().id
+}
+
+fn ecken(s: &Session, id: Id) -> Vec<(Vec2, f64)> {
+    match &s.doc.entity(id).expect("Objekt fehlt").kind {
+        EntityKind::Polyline { verts, .. } => verts.iter().map(|v| (v.p, v.bulge)).collect(),
+        other => panic!("keine Polylinie: {other:?}"),
+    }
+}
+
+/// Der Knick einer Polylinie wird in **einem** Objekt abgerundet: an die Stelle
+/// des Scheitelpunkts treten die beiden Anschlusspunkte, dazwischen ein Bogen.
+#[test]
+fn knick_der_polylinie_wird_abgerundet() {
+    let mut s = s();
+    let pl = polylinie(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    s.execute(
+        "modify.fillet",
+        &json!({"ids": [pl], "vertex": 1, "radius": 0.2}),
+    )
+    .expect("Abrunden am Knick");
+
+    let v = ecken(&s, pl);
+    assert_eq!(v.len(), 4, "Scheitelpunkt wird zu zwei Punkten");
+    assert_punkt(v[1].0, [800.0, 0.0], "Anschluss ankommend");
+    assert_punkt(v[2].0, [1000.0, 200.0], "Anschluss abgehend");
+    let erwartet = (std::f64::consts::FRAC_PI_8).tan();
+    assert!(
+        (v[1].1 - erwartet).abs() < 1e-9,
+        "Bogenmaß am Anschluss: {} statt {erwartet}",
+        v[1].1
+    );
+    assert!(v[2].1.abs() < 1e-12, "danach wieder gerade");
+
+    // Der Bogen läuft durch den Punkt, der dem Knick am nächsten liegt.
+    let arc = jjcad_core::geom::arc_from_bulge(v[1].0, v[2].0, v[1].1).expect("Bogen aus Bulge");
+    // Mitte des Viertelkreises um (800, 200): 200/√2 in beiden Richtungen.
+    let d = 200.0 * 0.5f64.sqrt();
+    assert_punkt(arc.mid(), [800.0 + d, 200.0 - d], "Bogenmitte");
+}
+
+/// Phase am Knick: kein Bogen, nur zwei neue Punkte mit gerader Verbindung.
+#[test]
+fn knick_der_polylinie_bekommt_eine_phase() {
+    let mut s = s();
+    let pl = polylinie(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    s.execute(
+        "modify.chamfer",
+        &json!({"ids": [pl], "vertex": 1, "distance": 0.15}),
+    )
+    .expect("Phase am Knick");
+    let v = ecken(&s, pl);
+    assert_eq!(v.len(), 4);
+    assert_punkt(v[1].0, [850.0, 0.0], "Schenkel ankommend");
+    assert_punkt(v[2].0, [1000.0, 150.0], "Schenkel abgehend");
+    assert!(v[1].1.abs() < 1e-12 && v[2].1.abs() < 1e-12, "keine Bögen");
+}
+
+/// Auch eine **geschlossene** Polylinie hat an jeder Ecke einen Knick.
+#[test]
+fn geschlossene_polylinie_hat_einen_knick_am_ersten_punkt() {
+    let mut s = s();
+    let pl = polylinie(
+        &mut s,
+        &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        true,
+    );
+    s.execute(
+        "modify.fillet",
+        &json!({"ids": [pl], "vertex": 0, "radius": 0.1}),
+    )
+    .expect("Abrunden am geschlossenen Zug");
+    let v = ecken(&s, pl);
+    assert_eq!(v.len(), 5);
+    assert_punkt(v[0].0, [0.0, 100.0], "Anschluss ankommend");
+    assert_punkt(v[1].0, [100.0, 0.0], "Anschluss abgehend");
+}
+
+/// Das offene Ende ist kein Knick — dort fehlt der zweite Schenkel.
+#[test]
+fn offenes_ende_ist_kein_knick() {
+    let mut s = s();
+    let pl = polylinie(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    let r = s.execute(
+        "modify.fillet",
+        &json!({"ids": [pl], "vertex": 2, "radius": 0.1}),
+    );
+    assert!(r.is_err(), "das Ende hat keinen Knick");
+}
+
+/// „Direkt über den Schnittpunkt": dort laufen **beide** Linien durch, die
+/// Auswahl findet sie in einem Schritt.
+#[test]
+fn schnittpunkt_liefert_beide_linien() {
+    let mut s = s();
+    let waagerecht = linie(&mut s, [0.0, 0.0], [1.0, 0.0]);
+    let senkrecht = linie(&mut s, [0.5, -0.5], [0.5, 0.5]);
+    let treffer = linien_durch(&s.doc, v(500.0, 0.0), 8.0);
+    assert_eq!(treffer.len(), 2, "beide Linien: {treffer:?}");
+    assert!(treffer.contains(&waagerecht) && treffer.contains(&senkrecht));
+    // Abseits der Ecke bleibt es bei einer.
+    let einer = linien_durch(&s.doc, v(900.0, 0.0), 8.0);
+    assert_eq!(einer, vec![waagerecht]);
+}
+
+/// Der Knick einer Polylinie ist über seinen Scheitelpunkt zu treffen.
+#[test]
+fn knick_wird_ueber_den_scheitelpunkt_getroffen() {
+    let mut s = s();
+    let pl = polylinie(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    let treffer = polylinien_knoten(&s.doc, v(1005.0, -3.0), 8.0);
+    assert_eq!(treffer.map(|(id, i, _)| (id, i)), Some((pl, 1)));
+    assert_eq!(polylinien_knoten(&s.doc, v(500.0, 0.0), 8.0), None);
 }
