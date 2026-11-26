@@ -242,6 +242,26 @@ pub const ACTIONS: &[ActionDef] = &[
         "action.modify.intersect.hint",
         true
     ),
+    // Ecke bearbeiten (T0247): zwei Linien anklicken, dann das Maß. Die
+    // Abrundung setzt einen Bogen, die Phase eine gerade Verbindung.
+    act!(
+        "modify.fillet",
+        "action.modify.fillet.label",
+        Aendern,
+        "fillet",
+        "",
+        "action.modify.fillet.hint",
+        true
+    ),
+    act!(
+        "modify.chamfer",
+        "action.modify.chamfer.label",
+        Aendern,
+        "chamfer",
+        "",
+        "action.modify.chamfer.hint",
+        true
+    ),
     act!(
         "modify.area.union",
         "action.modify.area.union.label",
@@ -2997,6 +3017,44 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             Ok(json!({
                 "ok": true,
                 "point": [punkt.x / 1000.0, punkt.y / 1000.0]
+            }))
+        }
+        // Abrunden und Phase (T0247): zwei Linien, die sich schneiden. Die
+        // Geometrie steht in `ecke`; `picks` sind die beiden Klickpunkte und
+        // entscheiden, welche Seite der Linien stehen bleibt.
+        "modify.fillet" | "modify.chamfer" => {
+            use crate::ecke::{EckeArt, *};
+            let art = if id == "modify.fillet" {
+                EckeArt::Abrunden
+            } else {
+                EckeArt::Phase
+            };
+            let ids = ids_from(&p, "ids");
+            if ids.len() < 2 {
+                return Err("Abrunden und Phase brauchen zwei Linien".into());
+            }
+            let mass = p
+                .len(art.mass_name())
+                .or_else(|| p.len("mass"))
+                .or_else(|| p.len("radius"))
+                .or_else(|| p.len("distance"))
+                .ok_or_else(|| "Parameter 'radius' bzw. 'distance' fehlt".to_string())?;
+            let picks = p.pts("picks").unwrap_or_default();
+            let (e, neu) = crate::ecke::anwenden(
+                doc,
+                ids[0],
+                ids[1],
+                picks.first().copied(),
+                picks.get(1).copied(),
+                mass,
+                art,
+            )?;
+            Ok(json!({
+                "ok": true,
+                "created": [neu],
+                "point": [e.punkt.x / 1000.0, e.punkt.y / 1000.0],
+                "mass": e.mass,
+                "leg": e.schenkel
             }))
         }
         // Flächen vereinigen: zwei oder mehr angrenzende Füllflächen werden

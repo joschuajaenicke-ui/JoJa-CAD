@@ -198,6 +198,14 @@ label = "Extend"
 hint = "Click two lines or walls — they meet at the intersection"
 label = "Intersect"
 
+[action.modify.fillet]
+hint = "Click two lines, then click or type the radius"
+label = "Fillet"
+
+[action.modify.chamfer]
+hint = "Click two lines, then click or type the size"
+label = "Chamfer"
+
 [action.modify.area.union]
 hint = "Select two or more adjacent fill areas — they become one"
 label = "Unite areas"
@@ -1130,6 +1138,14 @@ verschieben_basispunkt_klicken = "Move · click the base point"
 verschieben_objekte_waehlen_enter = "Move · choose objects (Enter)"
 verschieben_zielpunkt_klicken = "Move · click the target point"
 verschneiden_ecke_gesetzt = "Intersect · corner set"
+abrunden_erste_linie_anklicken = "Fillet · click first line"
+abrunden_zweite_linie_anklicken = "Fillet · click second line"
+abrunden_radius_klicken = "Fillet · click or type radius"
+phase_erste_linie_anklicken = "Chamfer · click first line"
+phase_zweite_linie_anklicken = "Chamfer · click second line"
+phase_mass_klicken = "Chamfer · click or type size"
+ecke_abgerundet = "Fillet · corner set"
+ecke_phase_gesetzt = "Chamfer · corner set"
 verschneiden_erstes_objekt_anklicken = "Intersect · click the first object"
 verschneiden_zweites_objekt_anklicken = "Intersect · click the second object"
 versetzen_objekt_anklicken = "Offset · click an object"
@@ -1171,6 +1187,10 @@ beenden = "Quit"
 kommandozeile = "Alternatively from the command line: jjcad --daten-dir <path>"
 
 [gui.canvas]
+ecke_mass_zu_klein = "Corner · size too small"
+ecke_zwei_linien = "Corner · two different lines"
+ecke_keine_linie = "Corner · lines only"
+ecke_kein_schnitt = "Corner · lines do not meet"
 png_bereich_diagonale = "PNG · click diagonal"
 png_bereich_zweiter_punkt = "PNG · click second corner"
 png_bereich_ohne_flaeche = "PNG · diagonal without area"

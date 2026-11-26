@@ -552,6 +552,14 @@ pub struct Tool {
     /// (Verschneiden, T0082). Der Punktpuffer `pts` reicht dafür nicht: die
     /// Action braucht die Kennung, nicht die Klickstelle.
     pub obj: Option<Id>,
+    /// Zweites Objekt desselben Paares (T0247). Abrunden und Phase kürzen
+    /// **beide** Linien; `pts` trägt danach nur noch den Eckpunkt, damit der
+    /// getippte Radius dieselbe Längen-Eingabe benutzt wie jedes Werkzeug.
+    pub obj2: Option<Id>,
+    /// Klickstelle zum ersten bzw. zweiten Objekt (T0247): sie entscheidet,
+    /// welche Seite der Linie stehen bleibt. Ohne sie gilt die längere Seite.
+    pub pick_a: Option<V2>,
+    pub pick_b: Option<V2>,
     pub selecting: bool,
     pub phase: ToolPhase,
 }
@@ -3947,6 +3955,48 @@ impl App {
                     }
                     self.start_tool("draw.parallel");
                 }
+                // Abrunden und Phase (T0247): zwei Linien bilden eine Ecke,
+                // das Werkzeug hat beide gewählt — es fehlt nur noch das Maß.
+                "abrunden" | "fillet" | "phase" | "chamfer" => {
+                    let u = self.unit().mm();
+                    let mut ids: Vec<Id> = Vec::new();
+                    for (a, b) in [
+                        ([500.0_f64, 500.0_f64], [4500.0_f64, 500.0_f64]),
+                        ([500.0, 500.0], [500.0, 4500.0]),
+                    ] {
+                        if let Ok(r) = self.session_mut().execute(
+                            "draw.line",
+                            &serde_json::json!({
+                                "a": [a[0] / u, a[1] / u],
+                                "b": [b[0] / u, b[1] / u]
+                            }),
+                        ) {
+                            if let Some(id) = r["created"][0].as_u64() {
+                                ids.push(id);
+                            }
+                        }
+                    }
+                    let werkzeug = if matches!(part.trim(), "phase" | "chamfer") {
+                        "modify.chamfer"
+                    } else {
+                        "modify.fillet"
+                    };
+                    self.ui.ribbon = RibbonTab::Aendern;
+                    self.start_tool(werkzeug);
+                    if ids.len() == 2 {
+                        if let Some(t) = self.tool.as_mut() {
+                            t.obj = Some(ids[0]);
+                            t.obj2 = Some(ids[1]);
+                            t.pick_a = Some(jjcad_core::geom::Vec2::new(2500.0, 500.0));
+                            t.pick_b = Some(jjcad_core::geom::Vec2::new(500.0, 2500.0));
+                            t.pts = vec![jjcad_core::geom::Vec2::new(500.0, 500.0)];
+                        }
+                        self.session_mut().select(ids);
+                    }
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.fit_view();
+                }
                 // Pfad-Werkzeug (T0229): zeigt den Werkzeugzustand und wählt
                 // den Pfad, damit Vorschau und Panel im Bild stehen.
                 "pfad" | "path" => {
@@ -5899,6 +5949,9 @@ impl App {
             schritte: Vec::new(),
             bogen: false,
             obj: None,
+            obj2: None,
+            pick_a: None,
+            pick_b: None,
             selecting: self.session().selection.is_empty()
                 && matches!(
                     id,
@@ -9671,6 +9724,10 @@ impl App {
                     });
                 }
                 RibbonTab::Aendern => {
+                    // Mit „Abrunden" und „Phase" (T0247) trägt die Gruppe
+                    // „Geometrie" neun Schaltflächen; der engere Abstand hält
+                    // den Reiter bei der Standardbreite 1500 px zusammen.
+                    ui.spacing_mut().item_spacing.x = 2.0;
                     self.group(ui, "ribbon.group.bearbeiten", |ui, app| {
                         for (id, icon) in RIBBON_BEARBEITEN {
                             let label = aktion_label(id);
@@ -9693,6 +9750,10 @@ impl App {
                             ("modify.trim", "trim"),
                             ("modify.extend", "extend"),
                             ("modify.intersect", "intersect"),
+                            // Ecke bearbeiten (T0247): Abrundung mit Bogen,
+                            // Phase mit gerader Fase.
+                            ("modify.fillet", "fillet"),
+                            ("modify.chamfer", "chamfer"),
                             ("modify.explode", "explode"),
                             ("modify.erase", "erase"),
                             ("path.connect", "polyline"),
@@ -11279,6 +11340,25 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 jjcad_core::i18n::tr("gui.app.verschneiden_erstes_objekt_anklicken")
             }
         }
+        // Abrunden und Phase (T0247): erst die zwei Linien, dann das Maß.
+        "modify.fillet" => {
+            if tool.obj2.is_some() {
+                jjcad_core::i18n::tr("gui.app.abrunden_radius_klicken")
+            } else if tool.obj.is_some() {
+                jjcad_core::i18n::tr("gui.app.abrunden_zweite_linie_anklicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.abrunden_erste_linie_anklicken")
+            }
+        }
+        "modify.chamfer" => {
+            if tool.obj2.is_some() {
+                jjcad_core::i18n::tr("gui.app.phase_mass_klicken")
+            } else if tool.obj.is_some() {
+                jjcad_core::i18n::tr("gui.app.phase_zweite_linie_anklicken")
+            } else {
+                jjcad_core::i18n::tr("gui.app.phase_erste_linie_anklicken")
+            }
+        }
         "modify.explode" => jjcad_core::i18n::tr("gui.app.zerlegen_objekt_anklicken"),
         "modify.area.split" => {
             if lebt {
@@ -11342,6 +11422,8 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         "modify.offset" => jjcad_core::i18n::tr("gui.app.auswahl_versetzt"),
         "modify.explode" => jjcad_core::i18n::tr("gui.app.objekt_zerlegt"),
         "modify.intersect" => jjcad_core::i18n::tr("gui.app.verschneiden_ecke_gesetzt"),
+        "modify.fillet" => jjcad_core::i18n::tr("gui.app.ecke_abgerundet"),
+        "modify.chamfer" => jjcad_core::i18n::tr("gui.app.ecke_phase_gesetzt"),
         "modify.area.union" => jjcad_core::i18n::tr("gui.app.fuellflaeche_vereinigt"),
         "modify.area.split" => jjcad_core::i18n::tr("gui.app.fuellflaeche_geteilt"),
         "block.insert" => jjcad_core::i18n::tr("gui.app.block_eingefuegt"),
@@ -14841,6 +14923,34 @@ mod tests_vollbild {
         );
     }
 
+    /// Der Reiter „Ändern" ist **breiter als die Mindestfensterbreite** — wie
+    /// „Start" schon vor ihm. Gemessen: 1660 px mit dem Standardabstand und
+    /// 1584 px mit 2 px (seit T0247 „Abrunden" und „Phase" in der Gruppe
+    /// „Geometrie" stehen; davor 1513 px). Der engere Abstand (`item_spacing.x`
+    /// im Ändern-Zweig) holt einen Teil zurück. Bei der Standardfensterbreite
+    /// schneidet die letzte Gruppe („Rückgängig/Wiederholen") rechts ab — die
+    /// beiden Knöpfe stehen zusätzlich in der Kopfzeile. Der Test hält den
+    /// Ist-Stand als Riegel: ein weiterer Knopf fällt sofort auf.
+    #[test]
+    fn reiter_aendern_bleibt_in_seiner_breite() {
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.ui.ribbon = RibbonTab::Aendern;
+        let mut breite = 0.0;
+        for _ in 0..3 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(1080.0, 700.0))),
+                ..Default::default()
+            };
+            let _ = ctx.run(raw, |ctx| app.ui(ctx));
+            breite = app.ui.last_ribbon_content_w;
+        }
+        assert!(
+            breite <= 1584.0,
+            "Reiter Ändern braucht {breite} px (Riegel 1584) — ein Knopf mehr schneidet rechts ab"
+        );
+    }
+
     /// Der Reiter „Start" ist **breiter als die Mindestfensterbreite** — das war
     /// er schon vor T0100 (1308 px bei 1080 px Fenster); „Bild einfügen" in der
     /// Gruppe „Ausgabe" kommt hinzu (gemessen 1383 px), seit T0127 „Datenordner"
@@ -15124,6 +15234,9 @@ mod tests_chat_texte {
                             schritte: Vec::new(),
                             bogen: false,
                             obj: None,
+                            obj2: None,
+                            pick_a: None,
+                            pick_b: None,
                             selecting,
                             phase,
                         });

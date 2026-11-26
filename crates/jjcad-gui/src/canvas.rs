@@ -4268,6 +4268,48 @@ fn draw_tool_preview(
             // Nach dem ersten Klick: beide Strecken bis zum Schnittpunkt (T0082).
             draw_verschneiden_preview(app, p, rect, view, cursor);
         }
+        "modify.fillet" | "modify.chamfer" => {
+            // Nach den beiden Linien zeigt der Zeiger den Radius bzw. das Maß:
+            // die fertige Ecke, nicht ein Platzhalter (T0247).
+            if let (Some(erstes), Some(zweites), Some(eckpunkt)) =
+                (tool.obj, tool.obj2, last)
+            {
+                let art = if tool.action == "modify.fillet" {
+                    jjcad_core::ecke::EckeArt::Abrunden
+                } else {
+                    jjcad_core::ecke::EckeArt::Phase
+                };
+                let mass = eckpunkt.dist(cursor);
+                p.circle_stroke(w2s(eckpunkt), 4.0, dashed);
+                if mass >= 1.0 {
+                    let tol = (0.3 / view.zoom).max(1e-3);
+                    if let Ok(e) = jjcad_core::ecke::ecke(
+                        app.doc(),
+                        erstes,
+                        zweites,
+                        tool.pick_a,
+                        tool.pick_b,
+                        mass,
+                        art,
+                    ) {
+                        for (q1, q2) in e.strecken(tol) {
+                            p.line_segment([w2s(q1), w2s(q2)], stroke);
+                        }
+                    }
+                }
+                let vor = if art == jjcad_core::ecke::EckeArt::Abrunden {
+                    "R "
+                } else {
+                    ""
+                };
+                label = format!(
+                    "{}{} {}",
+                    vor,
+                    unit.format_plain(mass, unit.decimals()),
+                    unit.short()
+                );
+            }
+        }
         "modify.explode" => {
             // Das Objekt unter dem Zeiger, das ein Klick auflösen würde (T0093).
             draw_explode_preview(app, p, rect, view, cursor);
@@ -5214,6 +5256,15 @@ fn handle_input(
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             let typed = app.ui.typed.clone();
+            // Abrunden/Phase (T0247): die getippte Zahl **ist** das Maß. Der
+            // Weg über einen Punkt taugt hier nicht — steht der Zeiger noch
+            // auf dem Eckpunkt, gibt es keine Richtung (T0236).
+            let eckenwerkzeug = app.tool.clone().filter(|t| {
+                ist_eckenwerkzeug(&t.action)
+                    && t.obj2.is_some()
+                    && !typed.is_empty()
+                    && !typed.contains(';')
+            });
             // Drehen: die getippte Zahl ist ein Winkel in Grad, keine Länge
             // (T0151). Muss **vor** dem Längenzweig stehen — der zog den
             // „bis"-Punkt auf einen Abstand und drehte damit um einen Winkel,
@@ -5222,7 +5273,23 @@ fn handle_input(
                 .tool
                 .clone()
                 .filter(|t| ist_drehwerkzeug(&t.action) && !typed.is_empty() && !typed.contains(';'));
-            if let Some(t) = dreh {
+            if let Some(t) = eckenwerkzeug {
+                match jjcad_core::units::parse_length(&typed, app.unit()) {
+                    Some(mass) if mass >= 1.0 => {
+                        if ecke_setzen(app, &t, mass) {
+                            if let Some(cur) = app.tool.as_mut() {
+                                cur.obj = None;
+                                cur.obj2 = None;
+                                cur.pick_a = None;
+                                cur.pick_b = None;
+                                cur.pts.clear();
+                            }
+                        }
+                    }
+                    _ => app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_mass_zu_klein")),
+                }
+                app.ui.typed.clear();
+            } else if let Some(t) = dreh {
                 let cursor = snapped.or_else(|| {
                     ctx.pointer_hover_pos()
                         .map(|pos| screen_to_world(rect, view, pos))
@@ -7410,6 +7477,9 @@ fn restart_tool(app: &mut App, action: &str) {
         schritte: Vec::new(),
         bogen: false,
         obj: None,
+        obj2: None,
+        pick_a: None,
+        pick_b: None,
         selecting: false,
         phase: ToolPhase::Collecting,
     });
@@ -7440,6 +7510,44 @@ fn basis_hoehe(a: V2, b: V2, p: V2) -> f64 {
 
 fn tool_click(app: &mut App, w: V2) {
     tool_click_at(app, w, w);
+}
+
+/// Ist das ein Werkzeug, das eine Ecke aus zwei Linien bearbeitet (T0247)?
+fn ist_eckenwerkzeug(action: &str) -> bool {
+    matches!(action, "modify.fillet" | "modify.chamfer")
+}
+
+/// Setzt die Eckbearbeitung am gewählten Linienpaar. `mass_mm` ist der Radius
+/// (Abrunden) bzw. das Maß (Phase) in Millimetern.
+///
+/// Der eine Weg für Klick und Tippeingabe: die getippte Zahl darf direkt das
+/// Maß sein, damit der Radius auch dann ankommt, wenn der Zeiger noch genau
+/// auf dem Eckpunkt steht (dort gibt es keine Richtung, T0236).
+fn ecke_setzen(app: &mut App, tool: &Tool, mass_mm: f64) -> bool {
+    let (Some(a), Some(b), Some(eckpunkt)) = (tool.obj, tool.obj2, tool.pts.first().copied())
+    else {
+        return false;
+    };
+    let unit = app.unit();
+    let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
+    let pick_a = tool.pick_a.unwrap_or(eckpunkt);
+    let pick_b = tool.pick_b.unwrap_or(eckpunkt);
+    let schluessel = if tool.action == "modify.fillet" {
+        "radius"
+    } else {
+        "distance"
+    };
+    let mut params = json!({
+        "ids": [a, b],
+        "mass": unit.from_mm(mass_mm),
+        "picks": [ax(pick_a), ax(pick_b)],
+    });
+    params[schluessel] = json!(unit.from_mm(mass_mm));
+    let ok = run(app, &tool.action, params);
+    if ok {
+        app.session_mut().select(vec![a, b]);
+    }
+    ok
 }
 
 // ---------------------------------------------------------------------------
@@ -7556,6 +7664,16 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
+    // Abrunden und Phase (T0247): solange das Paar noch nicht steht, tritt die
+    // Linie unter dem Zeiger hervor — sonst ist nicht zu sehen, welche gemeint ist.
+    if ist_eckenwerkzeug(&tool.action) && tool.obj2.is_none() {
+        return snap::hit_test(app.doc(), w, tol, None).filter(|id| {
+            matches!(
+                app.doc().entity(*id).map(|e| &e.kind),
+                Some(EntityKind::Line { .. })
+            )
+        });
+    }
     // Parallele (T0200): im ersten Schritt wählt der Klick eine Linie oder
     // Polylinie — sie muss vorher hervortreten, sonst ist nicht zu sehen,
     // wozu die Parallele gehören wird.
@@ -7644,6 +7762,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         schritte: Vec::new(),
                         bogen: false,
                         obj: None,
+                        obj2: None,
+                        pick_a: None,
+                        pick_b: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -7680,6 +7801,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         schritte: Vec::new(),
                         bogen: false,
                         obj: None,
+                        obj2: None,
+                        pick_a: None,
+                        pick_b: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -8498,6 +8622,70 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     if let Some(t) = app.tool.as_mut() {
                         t.obj = None;
                     }
+                }
+            }
+        }
+        // Abrunden und Phase (T0247): zwei Linien anklicken, dann das Maß am
+        // Zeiger (Klick) oder getippt (Enter, siehe `handle_input`).
+        "modify.fillet" | "modify.chamfer" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            // 1. und 2. Klick: die beiden Linien.
+            if tool.obj.is_none() || tool.obj2.is_none() {
+                let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
+                    return;
+                };
+                if !matches!(
+                    app.doc().entity(id).map(|e| &e.kind),
+                    Some(EntityKind::Line { .. })
+                ) {
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
+                    return;
+                }
+                match tool.obj {
+                    None => {
+                        tool.obj = Some(id);
+                        tool.pick_a = Some(w);
+                        app.session_mut().select(vec![id]);
+                        app.tool = Some(tool);
+                    }
+                    Some(erstes) if erstes == id => {
+                        app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_zwei_linien"));
+                    }
+                    Some(erstes) => {
+                        match jjcad_core::ecke::schnittpunkt(app.doc(), erstes, id) {
+                            Ok(eckpunkt) => {
+                                tool.obj2 = Some(id);
+                                tool.pick_b = Some(w);
+                                tool.pts = vec![eckpunkt];
+                                app.session_mut().select(vec![erstes, id]);
+                                app.tool = Some(tool);
+                            }
+                            Err(_) => {
+                                app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_kein_schnitt"))
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+            // 3. Klick: das Maß ist der Abstand vom Eckpunkt.
+            let Some(eckpunkt) = tool.pts.first().copied() else {
+                return;
+            };
+            let mass = eckpunkt.dist(w);
+            if mass < 1.0 {
+                app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_mass_zu_klein"));
+                return;
+            }
+            if ecke_setzen(app, &tool, mass) {
+                // Werkzeug bleibt für das nächste Paar aktiv.
+                if let Some(t) = app.tool.as_mut() {
+                    t.obj = None;
+                    t.obj2 = None;
+                    t.pick_a = None;
+                    t.pick_b = None;
+                    t.pts.clear();
                 }
             }
         }
@@ -19044,6 +19232,180 @@ mod tests_parallele {
             hover_ziel(&app, V2::new(1000.0, 3000.0), 20.0),
             None,
             "eine Wand ist keine Vorlage"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests_ecke {
+    //! Abrunden und Phase (T0247).
+    //!
+    //! Der Klickweg läuft über dieselbe Funktion wie die Maus (`tool_click`):
+    //! erst zwei Linien, dann das Maß am Zeiger. Geprüft wird die gespeicherte
+    //! Geometrie — gekürzte Linien und der neue Bogen bzw. die Fase.
+
+    use super::*;
+
+    fn app_mit_ecke() -> (App, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+        );
+        let waagerecht = *app.session().last_created.first().expect("Linie");
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [0.0, 2000.0]}),
+        );
+        let senkrecht = *app.session().last_created.first().expect("Linie");
+        (app, waagerecht, senkrecht)
+    }
+
+    fn enden(app: &App, id: Id) -> (V2, V2) {
+        match &app.doc().entity(id).expect("Objekt fehlt").kind {
+            EntityKind::Line { a, b } => (*a, *b),
+            other => panic!("keine Linie: {other:?}"),
+        }
+    }
+
+    fn nahe(p: V2, x: f64, y: f64) -> bool {
+        p.dist(V2::new(x, y)) < 1e-6
+    }
+
+    /// Zwei Klicks wählen die Linien, der dritte setzt den Radius. Danach
+    /// steht die Ecke in der Zeichnung und das Werkzeug ist wieder leer.
+    #[test]
+    fn klicks_runden_die_ecke_ab() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(waagerecht),
+            "erste Linie gewählt"
+        );
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj2),
+            Some(senkrecht),
+            "zweite Linie gewählt"
+        );
+        let eckpunkt = app.tool.as_ref().and_then(|t| t.pts.first().copied());
+        assert!(
+            eckpunkt.map(|p| nahe(p, 0.0, 0.0)).unwrap_or(false),
+            "Eckpunkt ist der Schnittpunkt: {eckpunkt:?}"
+        );
+
+        // Dritter Klick: 200 mm vom Eckpunkt entfernt = Radius 200.
+        tool_click(&mut app, V2::new(200.0, 0.0));
+
+        let (a1, a2) = enden(&app, waagerecht);
+        assert!(nahe(a1, 200.0, 0.0) && nahe(a2, 2000.0, 0.0), "{a1:?} {a2:?}");
+        let (b1, b2) = enden(&app, senkrecht);
+        assert!(nahe(b1, 0.0, 200.0) && nahe(b2, 0.0, 2000.0), "{b1:?} {b2:?}");
+        let bogen = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Arc { .. }))
+            .expect("Bogen fehlt");
+        match &bogen.kind {
+            EntityKind::Arc { c, r, .. } => {
+                assert!(nahe(*c, 200.0, 200.0), "Mittelpunkt {c:?}");
+                assert!((r - 200.0).abs() < 1e-6, "Radius {r}");
+            }
+            _ => unreachable!(),
+        }
+
+        // Werkzeug bleibt für das nächste Paar aktiv, aber ohne Altbestand.
+        let t = app.tool.as_ref().expect("Werkzeug läuft weiter");
+        assert!(t.obj.is_none() && t.obj2.is_none() && t.pts.is_empty());
+    }
+
+    /// Die Phase setzt statt des Bogens eine gerade Verbindung.
+    #[test]
+    fn klicks_setzen_eine_phase() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.chamfer");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        // 150 mm vom Eckpunkt: das Maß der Phase.
+        tool_click(&mut app, V2::new(0.0, 150.0));
+
+        let (a1, _) = enden(&app, waagerecht);
+        assert!(nahe(a1, 150.0, 0.0), "Schenkel gekürzt: {a1:?}");
+        let (_b1, _) = enden(&app, senkrecht);
+        let fase = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Line { .. }))
+            .filter(|e| e.id != waagerecht && e.id != senkrecht)
+            .count();
+        assert_eq!(fase, 1, "genau eine Fasenlinie");
+    }
+
+    /// Eine getippte Zahl ist das Maß selbst. Sie kommt auch dann an, wenn der
+    /// Zeiger noch auf dem Eckpunkt steht — dort gibt es keine Richtung.
+    #[test]
+    fn getipptes_mass_wird_gesetzt() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        let tool = app.tool.clone().expect("Werkzeug");
+        assert!(ecke_setzen(&mut app, &tool, 250.0), "Maß gesetzt");
+        let (a1, _) = enden(&app, waagerecht);
+        assert!(nahe(a1, 250.0, 0.0), "{a1:?}");
+        let (b1, _) = enden(&app, senkrecht);
+        assert!(nahe(b1, 0.0, 250.0), "{b1:?}");
+    }
+
+    /// Ein Kreis ist keine Linie — der Klick wird abgewiesen, ohne die
+    /// Zeichnung zu verändern (kein stiller Erfolg, T0038).
+    #[test]
+    fn nur_linien_werden_gewaehlt() {
+        let (mut app, _waagerecht, _senkrecht) = app_mit_ecke();
+        run(
+            &mut app,
+            "draw.circle",
+            json!({"c": [500.0, 500.0], "r": 100.0}),
+        );
+        let vorher = app.doc().entities.len();
+        app.start_tool("modify.fillet");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(600.0, 500.0));
+        assert!(
+            app.tool.as_ref().and_then(|t| t.obj2).is_none(),
+            "der Kreis wird nicht zum Paar"
+        );
+        assert_eq!(app.doc().entities.len(), vorher, "nichts entstanden");
+    }
+
+    /// Die Aufforderung im Chat folgt den drei Schritten.
+    #[test]
+    fn aufforderung_folgt_den_drei_schritten() {
+        let (mut app, _a, _b) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+        let opts = crate::app::ToolOptions::from_doc(app.doc());
+        let mut t = app.tool.clone().unwrap();
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_erste_linie_anklicken")
+        );
+        t.obj = Some(1);
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_zweite_linie_anklicken")
+        );
+        t.obj2 = Some(2);
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_radius_klicken")
         );
     }
 }

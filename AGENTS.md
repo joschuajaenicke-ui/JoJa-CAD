@@ -790,6 +790,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `reiter_zeichnen_passt_in_die_mindestbreite`). Prüfweg:
   `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
   Prüfbild `--demo "draw,parallele"`.
+- **Abrunden und Phase (T0247)**: Zwei Werkzeuge im Reiter „Ändern" (Gruppe
+  Geometrie) bearbeiten eine **Ecke aus zwei Linien**. Der Ablauf ist immer
+  derselbe: Klick auf die erste Linie, Klick auf die zweite (der Schnittpunkt
+  wird geprüft), dann das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
+  getippt + Enter. Die getippte Zahl **ist** das Maß (`Tool::obj2` schaltet den
+  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem
+  Zeiger ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie
+  steht **einmal** in `crates/jjcad-core/src/ecke.rs` (`ecke`, `anwenden`);
+  Klick (`canvas::ecke_setzen`), Vorschau (`draw_tool_preview`) und die Actions
+  `modify.fillet`/`modify.chamfer` rufen sie. Welcher Teil einer Linie stehen
+  bleibt, entscheidet die **Klickstelle** (`picks` im Befehl), ohne sie die
+  längere Seite. Das Verbindungsstück (Bogen bzw. Gerade) erbt Ebene und Stil
+  der ersten Linie; beide Linien werden gekürzt. Zu großes Maß, parallele
+  Linien und andere Objektarten sind Fehler (kein stiller Erfolg, T0038).
+  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (5 Tests) und
+  `cargo test -p jjcad-gui tests_ecke` (5 Tests); Prüfbilder `--demo abrunden`
+  und `--demo phase`.
 - **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
   Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
   `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende
