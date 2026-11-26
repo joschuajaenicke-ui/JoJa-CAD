@@ -551,7 +551,11 @@ ausgeblendet.
   Blöcke auf **Blöcke**, Linien und Flächen auf **Zeichnung**. Das Eigenschaften-Panel zeigt beim
   Platzieren diese Ziel-Ebene in der Zeile „Layer“; eine dort (oder im Layer-Manager als **eigene**
   Ebene) gewählte Ebene sticht die Vorgabe — wer sie wählt, zeichnet bewusst dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
-  Einstellungen der einzelnen Layer bleiben dabei erhalten.
+  Einstellungen der einzelnen Layer bleiben dabei erhalten. **Alle vier Layer zeichnen schwarz**
+  (`style::LAYER_FARBE`, T0249): vorher trugen Beschriftung ein Rot und Blöcke ein Grau, sodass
+  Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
+  Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
+  Farbpunkt im Layer-Manager.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

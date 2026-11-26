@@ -634,6 +634,16 @@ impl PaperSize {
 /// die frühere Mischung (Wände 0,50, Türen 0,25 …) ist damit weg.
 pub const LINIENSTAERKE_VORGABE: f64 = 0.18;
 
+/// Farbe der Standardebenen einer neuen Zeichnung (T0249).
+///
+/// Vorher trug „Beschriftung“ ein Rot (`#BE463C`) und „Blöcke“ ein Grau
+/// (`#6E737A`): in einer neuen Datei standen damit alle Maßzahlen, Texte und
+/// Beschriftungen in Rot und jede Blockinstanz in Grau, obwohl der Plan in
+/// Schwarz gezeichnet wird. Jetzt tragen **alle vier** Layer den einen
+/// Schwarzwert des Programms ([`Color::BLACK`]) — dieselbe Farbe wie Rahmen
+/// und Schriftfeld eines Blatts (`templates`).
+pub const LAYER_FARBE: Color = Color::BLACK;
+
 /// Die Standardebenen einer neuen Zeichnung: Name, Farbe, Linientyp.
 ///
 /// Seit T0202 sind das die **vier Layer eines Plans**: Jeder Plan (auch jeder
@@ -645,10 +655,10 @@ pub const LINIENSTAERKE_VORGABE: f64 = 0.18;
 /// [`LINIENSTAERKE_VORGABE`]). So gibt es keine zweite, fest verdrahtete
 /// Wahrheit, die von der Einstellung abweichen könnte (T0125).
 pub const LAYER_DEFAULTS: &[(&str, Color, LineType)] = &[
-    ("Zeichnung", Color::rgb(35, 38, 44), LineType::Solid),
-    ("Architektur", Color::rgb(35, 38, 44), LineType::Solid),
-    ("Beschriftung", Color::rgb(190, 70, 60), LineType::Solid),
-    ("Blöcke", Color::rgb(110, 115, 122), LineType::Solid),
+    ("Zeichnung", LAYER_FARBE, LineType::Solid),
+    ("Architektur", LAYER_FARBE, LineType::Solid),
+    ("Beschriftung", LAYER_FARBE, LineType::Solid),
+    ("Blöcke", LAYER_FARBE, LineType::Solid),
 ];
 
 // ---------------------------------------------------------------------------
