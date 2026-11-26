@@ -552,3 +552,41 @@ fn kreuzung_steht_in_der_kandidatenliste() {
         "Kreuzung fehlt in der Kandidatenliste: {cands:?}"
     );
 }
+
+/// Der Kreuzungspunkt trägt den Schnittpunkt als **zweite Fangart** (T0243,
+/// Turn 4): die Zeichenfläche zeichnet damit auch das Kreuz des
+/// Schnittpunkts, nicht nur das Winkelquadrat des Lots.
+#[test]
+fn kreuzung_traegt_den_schnittpunkt_als_zusatz() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    let cands = snap_candidates(
+        &s.doc,
+        Vec2::new(2004.0, 1495.0),
+        20.0,
+        Some(Vec2::new(2000.0, 0.0)),
+        &[],
+    );
+    let kreuzung = cands
+        .iter()
+        .find(|h| h.kind == SnapKind::Lot && h.point.dist(Vec2::new(2000.0, 1500.0)) < 1e-6)
+        .expect("Kreuzung fehlt in der Kandidatenliste");
+    assert_eq!(kreuzung.zusatz, Some(SnapKind::Intersection));
+    // Die Fangkette reicht den Zusatz bis in das Ergebnis durch.
+    let res = fang(&s, (2004.0, 1495.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.zusatz, Some(SnapKind::Intersection), "{res:?}");
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot));
+}
+
+/// Der einfache Fußpunkt auf der Senkrechten ist **kein** Schnittpunkt und
+/// trägt deshalb keinen Zusatz.
+#[test]
+fn fusspunkt_traegt_keinen_zusatz() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    // 30 mm unter der anderen Linie: die Kreuzung liegt außerhalb des Radius.
+    let res = fang(&s, (2003.0, 1595.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.zusatz, None, "{res:?}");
+}

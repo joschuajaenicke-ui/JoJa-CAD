@@ -837,9 +837,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
   (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
   bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  **Der Punkt trägt beide Zeichen** (Turn 4): `SnapHit::zusatz`/`SnapResolution::zusatz`
+  nennt die zweite erfüllte Fangart — am Kreuzungspunkt `SnapKind::Intersection`. Die
+  Zeichenfläche zeichnet sie zusätzlich (`FangZeichen::mit`, mittig auf dem Fangpunkt,
+  unabhängig vom Schalter „Schnittpunkt“: das Zeichen erklärt, warum der Punkt exakt ist),
+  das Winkelquadrat des Lots bleibt am Bezugspunkt; die Statuszeile nennt weiter nur
+  `kind` („Lotrecht“).
   Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `kreuzung_traegt_den_schnittpunkt_als_zusatz`,
   `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
-  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen) und
+  `cargo test -p jjcad-gui kreuzungsfang_zeigt` (beide Zeichen; Gegenprobe: das zusätzliche
+  Zeichnen entfernt, Test rot).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
