@@ -26,7 +26,21 @@ pub const PFAD_EPS_MM: f64 = 0.5;
 #[serde(tag = "art", rename_all = "snake_case")]
 pub enum PathSeg {
     Line { a: Vec2, b: Vec2 },
-    Arc { c: Vec2, r: f64, a0: f64, a1: f64 },
+    /// Bogen: `a0`→`a1` ist der **geometrische** Ausschnitt (Gegenuhrzeigersinn).
+    /// `rev` sagt, wie das Stück durchlaufen wird: `false` von `a0` nach `a1`,
+    /// `true` umgekehrt. Ohne diese Angabe wäre eine umgedrehte Laufrichtung
+    /// nur als **Gegenbogen** darstellbar — genau der Fehler aus T0248
+    /// (Anfang und Ende eines Bogens vertauscht, der Bogen sprang auf die
+    /// andere Seite des Kreises).
+    Arc {
+        c: Vec2,
+        r: f64,
+        a0: f64,
+        a1: f64,
+        #[serde(default, skip_serializing_if = "ist_falsch")]
+        rev: bool,
+    },
+    /// Ellipsenbogen, Laufrichtung wie beim Bogen über `rev`.
     EllipseArc {
         c: Vec2,
         rx: f64,
@@ -34,18 +48,31 @@ pub enum PathSeg {
         rot: f64,
         a0: f64,
         a1: f64,
+        #[serde(default, skip_serializing_if = "ist_falsch")]
+        rev: bool,
     },
     Spline { verts: Vec<Vertex> },
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn ist_falsch(b: &bool) -> bool {
+    !*b
 }
 
 impl PathSeg {
     pub fn start(&self) -> Vec2 {
         match self {
             PathSeg::Line { a, .. } => *a,
-            PathSeg::Arc { c, r, a0, .. } => *c + Vec2::polar(*a0, *r),
+            PathSeg::Arc { c, r, a0, a1, rev, .. } => {
+                let a = if *rev { *a1 } else { *a0 };
+                *c + Vec2::polar(a, *r)
+            }
             PathSeg::EllipseArc {
-                c, rx, ry, rot, a0, ..
-            } => *c + Vec2::new(rx * a0.cos(), ry * a0.sin()).rotated(*rot),
+                c, rx, ry, rot, a0, a1, rev, ..
+            } => {
+                let u = if *rev { *a1 } else { *a0 };
+                *c + Vec2::new(rx * u.cos(), ry * u.sin()).rotated(*rot)
+            }
             PathSeg::Spline { verts } => verts.first().map(|v| v.p).unwrap_or(Vec2::ZERO),
         }
     }
@@ -53,10 +80,16 @@ impl PathSeg {
     pub fn end(&self) -> Vec2 {
         match self {
             PathSeg::Line { b, .. } => *b,
-            PathSeg::Arc { c, r, a1, .. } => *c + Vec2::polar(*a1, *r),
+            PathSeg::Arc { c, r, a0, a1, rev, .. } => {
+                let a = if *rev { *a0 } else { *a1 };
+                *c + Vec2::polar(a, *r)
+            }
             PathSeg::EllipseArc {
-                c, rx, ry, rot, a1, ..
-            } => *c + Vec2::new(rx * a1.cos(), ry * a1.sin()).rotated(*rot),
+                c, rx, ry, rot, a0, a1, rev, ..
+            } => {
+                let u = if *rev { *a0 } else { *a1 };
+                *c + Vec2::new(rx * u.cos(), ry * u.sin()).rotated(*rot)
+            }
             PathSeg::Spline { verts } => verts.last().map(|v| v.p).unwrap_or(Vec2::ZERO),
         }
     }
@@ -95,7 +128,9 @@ impl PathSeg {
     pub fn segments(&self) -> Vec<Seg> {
         match self {
             PathSeg::Line { a, b } => vec![Seg::Line(*a, *b)],
-            PathSeg::Arc { c, r, a0, a1 } => vec![Seg::Arc(Arc::new(*c, *r, *a0, *a1))],
+            // Die Laufrichtung ist für Trefferprüfung und Fang unerheblich —
+            // geprüft wird die Punktmenge, und die ist beidseitig dieselbe.
+            PathSeg::Arc { c, r, a0, a1, .. } => vec![Seg::Arc(Arc::new(*c, *r, *a0, *a1))],
             PathSeg::EllipseArc {
                 c,
                 rx,
@@ -103,6 +138,7 @@ impl PathSeg {
                 rot,
                 a0,
                 a1,
+                ..
             } => {
                 let el = crate::geom::Ellipse::new(*c, *rx, *ry, *rot);
                 let pts = el.arc_points(*a0, *a1, 0.2);
@@ -120,7 +156,13 @@ impl PathSeg {
     pub fn flatten(&self, tol: f64) -> Vec<Vec2> {
         match self {
             PathSeg::Line { a, b } => vec![*a, *b],
-            PathSeg::Arc { c, r, a0, a1 } => Arc::new(*c, *r, *a0, *a1).flatten(tol),
+            PathSeg::Arc { c, r, a0, a1, rev } => {
+                let mut pts = Arc::new(*c, *r, *a0, *a1).flatten(tol);
+                if *rev {
+                    pts.reverse();
+                }
+                pts
+            }
             PathSeg::EllipseArc {
                 c,
                 rx,
@@ -128,7 +170,15 @@ impl PathSeg {
                 rot,
                 a0,
                 a1,
-            } => crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_points(*a0, *a1, tol),
+                rev,
+            } => {
+                let mut pts =
+                    crate::geom::Ellipse::new(*c, *rx, *ry, *rot).arc_points(*a0, *a1, tol);
+                if *rev {
+                    pts.reverse();
+                }
+                pts
+            }
             PathSeg::Spline { verts } => Spline {
                 verts: verts.clone(),
                 closed: false,
@@ -141,11 +191,14 @@ impl PathSeg {
     pub fn reversed(&self) -> PathSeg {
         match self.clone() {
             PathSeg::Line { a, b } => PathSeg::Line { a: b, b: a },
-            PathSeg::Arc { c, r, a0, a1 } => PathSeg::Arc {
+            // Nur die Laufrichtung kippt, der Bogen bleibt derselbe: `a0`/`a1`
+            // beschreiben den Ausschnitt, nicht den Weg (T0248).
+            PathSeg::Arc { c, r, a0, a1, rev } => PathSeg::Arc {
                 c,
                 r,
-                a0: a1,
-                a1: a0,
+                a0,
+                a1,
+                rev: !rev,
             },
             PathSeg::EllipseArc {
                 c,
@@ -154,13 +207,15 @@ impl PathSeg {
                 rot,
                 a0,
                 a1,
+                rev,
             } => PathSeg::EllipseArc {
                 c,
                 rx,
                 ry,
                 rot,
-                a0: a1,
-                a1: a0,
+                a0,
+                a1,
+                rev: !rev,
             },
             PathSeg::Spline { verts } => PathSeg::Spline {
                 verts: verts.into_iter().rev().collect(),
@@ -209,6 +264,25 @@ impl PfadSchritt {
     }
 }
 
+/// Bogenstück aus drei Punkten (Anfang `p0`, Punkt auf dem Bogen `pm`,
+/// Ende `p1`).
+///
+/// `Arc::from_3_points` dreht Anfang und Ende, wenn der Bogen nur andersherum
+/// durch die drei Punkte läuft. Für ein Pfadstück muss aber `p0` der Anfang
+/// sein; die Laufrichtung steht deshalb in `rev`, nicht in vertauschten
+/// Winkeln — vertauschte Winkel ergäben den **Gegenbogen** (T0248).
+pub fn arc_aus_3_punkten(p0: Vec2, pm: Vec2, p1: Vec2) -> Option<PathSeg> {
+    let arc = Arc::from_3_points(p0, pm, p1)?;
+    let rev = arc.start().dist(p0) > PFAD_EPS_MM;
+    Some(PathSeg::Arc {
+        c: arc.c,
+        r: arc.r,
+        a0: arc.a0,
+        a1: arc.a1,
+        rev,
+    })
+}
+
 /// Pfadstücke aus den Klicks des Werkzeugs: `pts` sind die Klickpunkte,
 /// `schritte[i]` sagt, was der i-te Klick beginnt.
 ///
@@ -235,13 +309,8 @@ pub fn pfad_aus_punkten(pts: &[Vec2], schritte: &[PfadSchritt]) -> Vec<PathSeg> 
             Some(PfadSchritt::ArcPoint) => {
                 let ist_ende = schritte.get(i + 1) == Some(&PfadSchritt::ArcEnd);
                 if ist_ende && i + 1 < pts.len() {
-                    if let Some(arc) = Arc::from_3_points(last, pts[i], pts[i + 1]) {
-                        out.push(PathSeg::Arc {
-                            c: arc.c,
-                            r: arc.r,
-                            a0: arc.a0,
-                            a1: arc.a1,
-                        });
+                    if let Some(arc) = arc_aus_3_punkten(last, pts[i], pts[i + 1]) {
+                        out.push(arc);
                     } else if last.dist(pts[i + 1]) > 1e-9 {
                         out.push(PathSeg::Line {
                             a: last,
@@ -314,6 +383,7 @@ fn segs_aus_kind(kind: &EntityKind) -> Option<Vec<PathSeg>> {
             r: *r,
             a0: *a0,
             a1: *a1,
+            rev: false,
         }],
         EntityKind::EllipseArc {
             c,
@@ -329,6 +399,7 @@ fn segs_aus_kind(kind: &EntityKind) -> Option<Vec<PathSeg>> {
             rot: *rot,
             a0: *a0,
             a1: *a1,
+            rev: false,
         }],
         EntityKind::Spline { verts, closed } => {
             if *closed {
