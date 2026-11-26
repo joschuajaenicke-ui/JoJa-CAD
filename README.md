@@ -7,7 +7,11 @@ für Linux, Windows und macOS.
 
 ![JoJa-CAD Oberfläche](samples/ui.png)
 
-*Beispielzeichnung aus dem Repository — Platzhalter, nicht fachlich geprüft.*
+*Beispielzeichnung aus dem Repository: Wohnhaus, Erdgeschoss.*
+
+![Beispielzeichnung als Blatt](samples/Wohnhaus.png)
+
+*Die Beispielzeichnung als gesetztes Blatt A3 mit Rahmen, Schriftfeld und Ansichtsfenster.*
 
 ## Die Idee
 

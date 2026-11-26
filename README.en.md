@@ -7,7 +7,11 @@ for Linux, Windows and macOS.
 
 ![JoJa-CAD interface](samples/ui.png)
 
-*Example drawing from the repository — a placeholder, not professionally reviewed.*
+*Example drawing from the repository: a house, ground floor.*
+
+![Example drawing as a sheet](samples/Wohnhaus.png)
+
+*The example drawing as an A3 sheet with frame, title block and viewport.*
 
 ## The idea
 

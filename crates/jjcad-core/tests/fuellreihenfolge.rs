@@ -379,14 +379,14 @@ fn leinwand_zeigt_die_umrandung_auf_der_gefuellten_flaeche() {
 
 #[test]
 fn wandraum_im_wohnhaus_behaelt_den_wandrahmen() {
-    // Echter Plan: Raum unten links, Umrandung sind Wandkörper. Die Wandlinien
-    // müssen nach der Füllung gezeichnet werden.
+    // Echter Plan: WC im Beispielhaus, Umrandung sind Wandkörper. Die
+    // Wandlinien müssen nach der Füllung gezeichnet werden.
     let pfad = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../samples/Wohnhaus.jjcad");
     let doc: Document = jjcad_core::persist::load_document(&pfad).expect("Wohnhaus.jjcad");
     let mut s = Session::with_doc(doc);
     let grenze = jjcad_core::boundary::detect_boundary(
         &s.doc,
-        jjcad_core::geom::Vec2::new(1500.0, 2600.0),
+        jjcad_core::geom::Vec2::new(4800.0, 1000.0),
         &jjcad_core::boundary::BoundaryOpts::default(),
     )
     .expect("Umgrenzung");
@@ -395,9 +395,13 @@ fn wandraum_im_wohnhaus_behaelt_den_wandrahmen() {
         "die Umgrenzung muss ihre Objekte kennen"
     );
 
+    // Die Beispielzeichnung rechnet in Zentimetern; der Prüfpunkt steht in
+    // Millimetern.
+    s.execute("doc.settings", &json!({"input_unit": "mm"}))
+        .expect("Einheit");
     s.execute(
         "draw.fill.paint",
-        &json!({"p": [1.5, 2.6], "pattern": "solid", "fill": "#ff0000"}),
+        &json!({"p": [4800.0, 1000.0], "pattern": "solid", "fill": "#ff0000"}),
     )
     .expect("Raum füllen");
 

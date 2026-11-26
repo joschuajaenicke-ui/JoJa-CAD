@@ -284,8 +284,9 @@ fn vorhandene_fuellflaeche_ist_keine_begrenzung() {
 #[test]
 fn wohnhaus_raum_ist_masshaltig_und_unter_200_ms() {
     let doc = wohnhaus();
-    // Raum unten links, zwischen Außenwand (x=0, y=0) und Innenwänden.
-    let klick = v(1500.0, 2600.0);
+    // WC im neuen Beispielhaus (3575…6100 × 400…1535 mm), ein geschlossener
+    // Raum zwischen Außenwand (unten, 400 mm) und Innenwänden.
+    let klick = v(4800.0, 1000.0);
 
     // Einmal warmlaufen, dann messen — gemessen wird die reine Rechenzeit.
     let _ = detect_boundary(&doc, klick, &BoundaryOpts::default());
@@ -318,12 +319,13 @@ fn wohnhaus_raum_ist_masshaltig_und_unter_200_ms() {
         "Laufzeit {dauer:?} überschreitet {budget_ms} ms"
     );
 
-    // Die Innenfläche der Außenwand liegt bei 150 mm; die Kontur muss dort
-    // sitzen, nicht irgendwo im Freien (Vorgabe der Folgekarte F5: ±0,5 mm).
+    // Die Innenfläche der Außenwand liegt unten bei 400 mm, die Innenwand
+    // links bei 3575 mm; die Kontur muss dort sitzen, nicht irgendwo im Freien
+    // (Vorgabe der Folgekarte F5: ±0,5 mm).
     let bb = b.bbox();
     for (name, ist, soll) in [
-        ("links", bb.min.x, 150.0),
-        ("unten", bb.min.y, 150.0),
+        ("links", bb.min.x, 3575.0),
+        ("unten", bb.min.y, 400.0),
     ] {
         assert!(
             (ist - soll).abs() <= 0.5,
@@ -331,14 +333,14 @@ fn wohnhaus_raum_ist_masshaltig_und_unter_200_ms() {
         );
     }
     assert!(
-        b.area() > 25.0e6 && b.area() < 30.0e6,
+        b.area() > 2.8e6 && b.area() < 3.2e6,
         "Fläche {:.2} m² unplausibel",
         b.area() / 1e6
     );
     assert!(b.contains(klick));
 
-    // Kein Treppenzug: der Raum hat einen Türbogen und zwei Inseln, bleibt aber
-    // weit unter der Zahl, die eine ungefilterte Rasterkontur liefert (771).
+    // Kein Treppenzug: der Raum hat Türbogen und Fenster, bleibt aber weit
+    // unter der Zahl, die eine ungefilterte Rasterkontur liefert.
     assert!(
         b.outer.len() <= 250,
         "Außenkontur hat {} Stützpunkte — Rasterzacken nicht vereinfacht",
@@ -358,7 +360,7 @@ fn ergebnis_haengt_nicht_am_pixelbudget() {
     // Dasselbe Ergebnis bei grobem und feinem Budget: der Randstreifen wird
     // immer in Zielauflösung nachgerechnet.
     let doc = wohnhaus();
-    let klick = v(1500.0, 2600.0);
+    let klick = v(4800.0, 1000.0);
     let grob = detect_boundary(
         &doc,
         klick,
@@ -503,20 +505,25 @@ fn farbeimer_undo_entfernt_nur_die_flaeche() {
 #[test]
 fn farbeimer_fuellt_wohnhaus_raum_und_meldet_offene_ecke() {
     let mut s = Session::with_doc(wohnhaus());
+    // Die Beispielzeichnung rechnet in Zentimetern; für die Prüfpunkte in
+    // Millimetern wird auf Millimeter umgestellt.
+    s.execute("doc.settings", &json!({"input_unit": "mm"}))
+        .expect("Einheit");
     let vorher = s.doc.entities.len();
 
-    // Abnahme 1 am echten Plan: Raum unten links.
+    // Abnahme 1 am echten Plan: WC (3575…6100 × 400…1535 mm).
     s.execute(
         "draw.fill.paint",
-        &json!({"p": [1.5, 2.6], "pattern": "solid"}),
+        &json!({"p": [4800.0, 1000.0], "pattern": "solid"}),
     )
     .expect("Raum im Wohnhaus muss sich füllen lassen");
     assert_eq!(s.doc.entities.len(), vorher + 1, "genau eine Fläche");
 
     let (boundary, _holes, _, _) = fuellflaeche(&s);
     let bb = jjcad_core::geom::BBox::from_points(&boundary);
-    // Die Innenkante der Außenwand (300 mm dick, mittig) liegt bei 150 mm.
-    for (name, ist, soll) in [("links", bb.min.x, 150.0), ("unten", bb.min.y, 150.0)] {
+    // Die Innenkante der Außenwand (400 mm dick) liegt unten bei 400 mm, die
+    // Innenwand links bei 3575 mm.
+    for (name, ist, soll) in [("links", bb.min.x, 3575.0), ("unten", bb.min.y, 400.0)] {
         assert!(
             (ist - soll).abs() <= 0.5,
             "Kante {name} bei {ist} mm statt {soll} mm"
@@ -525,7 +532,7 @@ fn farbeimer_fuellt_wohnhaus_raum_und_meldet_offene_ecke() {
 
     // Abnahme 2: offene Ecke außerhalb des Gebäudes -> Toast, kein Objekt.
     let err = s
-        .execute("draw.fill.paint", &json!({"p": [40.0, 40.0]}))
+        .execute("draw.fill.paint", &json!({"p": [40000.0, 40000.0]}))
         .unwrap_err();
     assert_eq!(err, "Fläche ist nicht geschlossen");
     assert_eq!(s.doc.entities.len(), vorher + 1, "kein zweites Objekt");
