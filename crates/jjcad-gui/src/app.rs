@@ -3501,6 +3501,55 @@ impl App {
                         self.session_mut().select(vec![id]);
                     }
                 }
+                // Radiusbemaßung (T0252): Kreis mit Maßlinie vom Mittelpunkt,
+                // Pfeil am Bogen und der Maßzahl außerhalb — ausgewählt, damit
+                // das Panel Radius, Winkel und Maßtext zeigt.
+                "radiusmass" | "radien" => {
+                    self.new_document();
+                    // Der Blattmanager liegt sonst rechts statt des Panels —
+                    // `App::new` hat die Einstellungen vorher in `UiState`
+                    // kopiert (T0242).
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let kreis = self
+                        .session_mut()
+                        .execute(
+                            "draw.circle",
+                            &serde_json::json!({"c": [0.0, 0.0], "r": 1.5}),
+                        )
+                        .ok()
+                        .and_then(|r| r["created"][0].as_u64());
+                    if let Some(id) = kreis {
+                        let antwort = self.session_mut().execute(
+                            "dim.radius",
+                            &serde_json::json!({"ids": [id], "p": [1.5, 0.0]}),
+                        );
+                        if let Some(dim) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                            self.session_mut().select(vec![dim]);
+                        }
+                    }
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(1300.0, 200.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
+                // Radiusbemaßung, Werkzeug läuft: die Vorschau hängt am
+                // Zeiger (Prüfbild mit der Maus über dem Kreis).
+                "radiusmasswerkzeug" => {
+                    self.new_document();
+                    let _ = self.session_mut().execute(
+                        "draw.circle",
+                        &serde_json::json!({"c": [0.0, 0.0], "r": 1.5}),
+                    );
+                    self.start_tool("dim.radius");
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::ZERO;
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
                 // Maßkette anlegen und auswählen: Basispunkt-Griffe, Raute an
                 // der Maßlinie und der Abstand im Eigenschaften-Panel in einem
                 // Bild (T0055).
@@ -10019,6 +10068,7 @@ impl App {
                             }
                         }
                         for (id, icon) in [
+                            ("dim.radius", "radius"),
                             ("dim.elevation.plan", "elevation"),
                             ("dim.elevation.section", "elevation-section"),
                             ("dim.room", "room"),
@@ -11433,6 +11483,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
                 jjcad_core::i18n::tr("gui.app.punkt_entfernen_masskette_klicken")
             }
         }
+        "dim.radius" => jjcad_core::i18n::tr("gui.app.radius_kreis_oder_bogen"),
         "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_punkt_klicken"),
         "dim.elevation.section" => {
             if lebt {
@@ -11576,6 +11627,7 @@ pub(crate) fn abschluss_meldung(action: &str) -> Option<&'static str> {
         }
         "dim.point.add" => jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_gesetzt"),
         "dim.point.remove" => jjcad_core::i18n::tr("gui.app.punkt_entfernen_entfernt"),
+        "dim.radius" => jjcad_core::i18n::tr("gui.app.radius_gesetzt"),
         "dim.elevation.plan" => jjcad_core::i18n::tr("gui.app.grundriss_kote_gesetzt"),
         "dim.elevation.section" => jjcad_core::i18n::tr("gui.app.schnitt_kote_gesetzt"),
         "dim.room" => jjcad_core::i18n::tr("gui.app.raumstempel_gesetzt"),
@@ -12401,6 +12453,7 @@ pub fn entity_kind_icon(kind: &EntityKind) -> &'static str {
         EntityKind::Volume { .. } => "volume",
         EntityKind::Text { .. } => "text",
         EntityKind::Dim { .. } => "dim",
+        EntityKind::DimRadius { .. } => "radius",
         EntityKind::ElevationPlan { .. } => "elevation",
         EntityKind::ElevationSection { .. } => "elevation-section",
         EntityKind::Room { .. } => "room",
