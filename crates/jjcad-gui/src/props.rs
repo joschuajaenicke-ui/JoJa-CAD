@@ -669,6 +669,7 @@ pub fn vorgaben_aus_objekt(app: &mut App, id: Id) -> bool {
     // Gemeinsame Zeilen — dieselben Felder, die `gemein_nach_optionen` setzt.
     app.ui.pending.color = e.style.color;
     app.ui.pending.fill = e.style.fill;
+    app.ui.pending.no_fill = e.style.no_fill;
     app.ui.pending.lineweight = e.style.line_weight;
     app.ui.pending.line_type = e.style.line_type;
     app.ui.pending.loop_width = e.style.loop_width;
@@ -1473,36 +1474,46 @@ pub fn eingabe_spiegeln(app: &mut App) {
 pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     let unit = app.unit();
     let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
-    let (layer, farbe, mut dicke, mut hoehe, mut ausrichtung, mut schraffur, mut fuellfarbe) =
-        match &e {
-            Some(e) => match &e.kind {
-                EntityKind::Wall {
-                    thickness,
-                    height,
-                    hatch,
-                    align,
-                    ..
-                } => (
-                    e.layer,
-                    e.style.color,
-                    *thickness,
-                    *height,
-                    *align,
-                    *hatch,
-                    e.style.fill,
-                ),
-                _ => return,
-            },
-            None => (
-                app.werkzeug_ziel_ebene("Architektur"),
-                app.ui.pending.color,
-                app.options.wall_thickness,
-                app.options.wall_height,
-                app.options.wall_align,
-                app.options.wall_hatch,
-                app.ui.pending.fill,
+    let (
+        layer,
+        farbe,
+        mut dicke,
+        mut hoehe,
+        mut ausrichtung,
+        mut schraffur,
+        mut fuellfarbe,
+        mut kein_fill,
+    ) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::Wall {
+                thickness,
+                height,
+                hatch,
+                align,
+                ..
+            } => (
+                e.layer,
+                e.style.color,
+                *thickness,
+                *height,
+                *align,
+                *hatch,
+                e.style.fill,
+                e.style.no_fill,
             ),
-        };
+            _ => return,
+        },
+        None => (
+            app.werkzeug_ziel_ebene("Architektur"),
+            app.ui.pending.color,
+            app.options.wall_thickness,
+            app.options.wall_height,
+            app.options.wall_align,
+            app.options.wall_hatch,
+            app.ui.pending.fill,
+            app.ui.pending.no_fill,
+        ),
+    };
 
     let farbe_gezeigt = farbe.unwrap_or_else(|| {
         app.doc()
@@ -1593,24 +1604,27 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         } else {
             Some(hp)
         };
+        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
+        kein_fill = false;
     }
 
     zeile("fuellfarbe");
-    let fill_unset = fuellfarbe.is_none();
+    // Drei Zustände (T0242): keine Füllung, Standard oder eine Farbe. Ohne
+    // Füllfarbe zeichnet die Wand den Vorgabeton — das ist etwas anderes.
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.74));
-    let mut picked_fill: Option<Option<Color>> = None;
+    let wahl = jjcad_core::style::Fuellung::aus_style(fuellfarbe, kein_fill);
+    let mut picked_fill: Option<jjcad_core::style::Fuellung> = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
-        picked_fill = panels::color_combo(
+        picked_fill = panels::fuellung_combo(
             ui,
             &ziel.salt("wand_fuellfarbe"),
+            wahl,
             fill_cur,
-            fill_unset,
-            false,
             jjcad_core::i18n::tr("gui.props.standard"),
         );
     });
     if let Some(v) = picked_fill {
-        fuellfarbe = v;
+        (fuellfarbe, kein_fill) = v.in_style();
     }
 
     // Kennzahlen: beim Erzeugen noch nicht vorhanden.
@@ -1646,9 +1660,8 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             app.options.wall_height = hoehe;
             app.options.wall_align = ausrichtung;
             app.options.wall_hatch = schraffur;
-            if let Some(v) = picked_fill {
-                app.ui.pending.fill = v;
-            }
+            app.ui.pending.fill = fuellfarbe;
+            app.ui.pending.no_fill = kein_fill;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -1696,13 +1709,10 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             geaendert = true;
                         }
                     }
-                    if fuellfarbe != e.style.fill {
+                    if fuellfarbe != e.style.fill || kein_fill != e.style.no_fill {
                         map.insert(
                             "fill".into(),
-                            serde_json::json!(match fuellfarbe {
-                                Some(c) => c.to_hex(),
-                                None => "none".to_string(),
-                            }),
+                            serde_json::json!(fuell_param(fuellfarbe, kein_fill)),
                         );
                         geaendert = true;
                     }
@@ -1711,6 +1721,18 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             if geaendert {
                 setzen(app, &params);
             }
+        }
+    }
+}
+
+/// Füllung als Action-Parameter (T0242): „keine“, Farbwert oder „none“.
+fn fuell_param(fill: Option<Color>, kein_fill: bool) -> String {
+    if kein_fill {
+        "keine".to_string()
+    } else {
+        match fill {
+            Some(c) => c.to_hex(),
+            None => "none".to_string(),
         }
     }
 }
@@ -2107,42 +2129,52 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         .map(|t| t.action.clone())
         .unwrap_or_default();
 
-    let (layer, farbe, mut muster, mut winkel, mut abstand, mut rand, mut fuellfarbe) =
-        match &e {
-            Some(e) => match &e.kind {
-                EntityKind::Fill {
-                    pattern,
-                    pattern_angle,
-                    pattern_scale,
-                    border,
-                    ..
-                } => (
-                    e.layer,
-                    e.style.color,
-                    *pattern,
-                    pattern_angle.to_degrees(),
-                    *pattern_scale,
-                    *border,
-                    e.style.fill,
-                ),
-                _ => return,
-            },
-            None => (
-                app.werkzeug_ziel_ebene("Zeichnung"),
-                app.ui.pending.color,
-                // Der Farbeimer hat sein eigenes Muster (startet mit
-                // Vollfläche, wie ein Farbeimer im Malprogramm).
-                if werkzeug == "draw.fill.paint" {
-                    app.options.paint_pattern
-                } else {
-                    app.options.fill_pattern
-                },
-                app.options.fill_angle.to_degrees(),
-                app.options.fill_scale,
-                app.options.fill_border_for(&werkzeug),
-                app.ui.pending.fill,
+    let (
+        layer,
+        farbe,
+        mut muster,
+        mut winkel,
+        mut abstand,
+        mut rand,
+        mut fuellfarbe,
+        mut kein_fill,
+    ) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::Fill {
+                pattern,
+                pattern_angle,
+                pattern_scale,
+                border,
+                ..
+            } => (
+                e.layer,
+                e.style.color,
+                *pattern,
+                pattern_angle.to_degrees(),
+                *pattern_scale,
+                *border,
+                e.style.fill,
+                e.style.no_fill,
             ),
-        };
+            _ => return,
+        },
+        None => (
+            app.werkzeug_ziel_ebene("Zeichnung"),
+            app.ui.pending.color,
+            // Der Farbeimer hat sein eigenes Muster (startet mit
+            // Vollfläche, wie ein Farbeimer im Malprogramm).
+            if werkzeug == "draw.fill.paint" {
+                app.options.paint_pattern
+            } else {
+                app.options.fill_pattern
+            },
+            app.options.fill_angle.to_degrees(),
+            app.options.fill_scale,
+            app.options.fill_border_for(&werkzeug),
+            app.ui.pending.fill,
+            app.ui.pending.no_fill,
+        ),
+    };
 
     let farbe_gezeigt = farbe.unwrap_or_else(|| {
         app.doc()
@@ -2183,6 +2215,8 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     if let Some(v) = picked {
         muster = v;
+        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
+        kein_fill = false;
     }
 
     zeile("winkel");
@@ -2211,21 +2245,21 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
 
     zeile("fuellfarbe");
-    let fill_unset = fuellfarbe.is_none();
+    // Drei Zustände (T0242): keine Füllung, Standard oder eine Farbe.
     let fill_cur = fuellfarbe.unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, 0.72));
-    let mut picked_fill: Option<Option<Color>> = None;
+    let wahl = jjcad_core::style::Fuellung::aus_style(fuellfarbe, kein_fill);
+    let mut picked_fill: Option<jjcad_core::style::Fuellung> = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
-        picked_fill = panels::color_combo(
+        picked_fill = panels::fuellung_combo(
             ui,
             &ziel.salt("fuell_farbe"),
+            wahl,
             fill_cur,
-            fill_unset,
-            false,
             jjcad_core::i18n::tr("gui.props.standard"),
         );
     });
     if let Some(v) = picked_fill {
-        fuellfarbe = v;
+        (fuellfarbe, kein_fill) = v.in_style();
     }
 
     // Kennzahlen: beim Erzeugen gibt es noch keine Umgrenzung.
@@ -2261,9 +2295,8 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             if !werkzeug.is_empty() {
                 *app.options.fill_border_for_mut(&werkzeug) = rand;
             }
-            if let Some(v) = picked_fill {
-                app.ui.pending.fill = v;
-            }
+            app.ui.pending.fill = fuellfarbe;
+            app.ui.pending.no_fill = kein_fill;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -2299,13 +2332,10 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             geaendert = true;
                         }
                     }
-                    if fuellfarbe != e.style.fill {
+                    if fuellfarbe != e.style.fill || kein_fill != e.style.no_fill {
                         map.insert(
                             "fill".into(),
-                            serde_json::json!(match fuellfarbe {
-                                Some(c) => c.to_hex(),
-                                None => "none".to_string(),
-                            }),
+                            serde_json::json!(fuell_param(fuellfarbe, kein_fill)),
                         );
                         geaendert = true;
                     }
@@ -3730,39 +3760,50 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         .map(|t| t.action.clone())
         .unwrap_or_default();
 
-    let (layer, farbe, mut hoehe, mut muster, mut winkel, mut abstand, mut rand, mut fuellfarbe) =
-        match &e {
-            Some(e) => match &e.kind {
-                EntityKind::Volume {
-                    pattern,
-                    pattern_angle,
-                    pattern_scale,
-                    border,
-                    height,
-                    ..
-                } => (
-                    e.layer,
-                    e.style.color,
-                    *height,
-                    *pattern,
-                    pattern_angle.to_degrees(),
-                    *pattern_scale,
-                    *border,
-                    e.style.fill,
-                ),
-                _ => return,
-            },
-            None => (
-                app.werkzeug_ziel_ebene("Architektur"),
-                app.ui.pending.color,
-                app.options.volume_height,
-                app.options.volume_pattern,
-                app.options.volume_angle.to_degrees(),
-                app.options.volume_scale,
-                app.options.fill_border_for(&werkzeug),
-                app.ui.pending.fill,
+    let (
+        layer,
+        farbe,
+        mut hoehe,
+        mut muster,
+        mut winkel,
+        mut abstand,
+        mut rand,
+        mut fuellfarbe,
+        mut kein_fill,
+    ) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::Volume {
+                pattern,
+                pattern_angle,
+                pattern_scale,
+                border,
+                height,
+                ..
+            } => (
+                e.layer,
+                e.style.color,
+                *height,
+                *pattern,
+                pattern_angle.to_degrees(),
+                *pattern_scale,
+                *border,
+                e.style.fill,
+                e.style.no_fill,
             ),
-        };
+            _ => return,
+        },
+        None => (
+            app.werkzeug_ziel_ebene("Architektur"),
+            app.ui.pending.color,
+            app.options.volume_height,
+            app.options.volume_pattern,
+            app.options.volume_angle.to_degrees(),
+            app.options.volume_scale,
+            app.options.fill_border_for(&werkzeug),
+            app.ui.pending.fill,
+            app.ui.pending.no_fill,
+        ),
+    };
     let farbe_gezeigt = farbe.unwrap_or_else(|| {
         app.doc()
             .layer(layer)
@@ -3814,6 +3855,8 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     if let Some(v) = picked {
         muster = v;
+        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
+        kein_fill = false;
     }
     zeile("winkel");
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
@@ -3838,22 +3881,22 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         ui.checkbox(&mut rand, "");
     });
     zeile("fuellfarbe");
-    let fill_unset = fuellfarbe.is_none();
+    // Drei Zustände (T0242): keine Füllung, Wandton oder eine Farbe.
     let fill_cur = fuellfarbe
         .unwrap_or_else(|| farbe_gezeigt.mix(Color::WHITE, jjcad_core::render::WALL_FILL_MIX));
-    let mut picked_fill: Option<Option<Color>> = None;
+    let wahl = jjcad_core::style::Fuellung::aus_style(fuellfarbe, kein_fill);
+    let mut picked_fill: Option<jjcad_core::style::Fuellung> = None;
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.fuellfarbe"), |ui| {
-        picked_fill = panels::color_combo(
+        picked_fill = panels::fuellung_combo(
             ui,
             &ziel.salt("volumen_farbe"),
+            wahl,
             fill_cur,
-            fill_unset,
-            false,
             jjcad_core::i18n::tr("gui.props.wandton"),
         );
     });
     if let Some(v) = picked_fill {
-        fuellfarbe = v;
+        (fuellfarbe, kein_fill) = v.in_style();
     }
 
     zeile("kennzahlen");
@@ -3884,9 +3927,8 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
             if !werkzeug.is_empty() {
                 *app.options.fill_border_for_mut(&werkzeug) = rand;
             }
-            if let Some(v) = picked_fill {
-                app.ui.pending.fill = v;
-            }
+            app.ui.pending.fill = fuellfarbe;
+            app.ui.pending.no_fill = kein_fill;
         }
         Ziel::Auswahl(id) => {
             gemein_nach_objekt(app, id, &a);
@@ -3927,13 +3969,10 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
                             geaendert = true;
                         }
                     }
-                    if fuellfarbe != e.style.fill {
+                    if fuellfarbe != e.style.fill || kein_fill != e.style.no_fill {
                         map.insert(
                             "fill".into(),
-                            serde_json::json!(match fuellfarbe {
-                                Some(c) => c.to_hex(),
-                                None => "none".to_string(),
-                            }),
+                            serde_json::json!(fuell_param(fuellfarbe, kein_fill)),
                         );
                         geaendert = true;
                     }
@@ -4882,6 +4921,49 @@ mod tests {
             sammle(&gezeichnet.shape, &mut out);
         }
         out
+    }
+
+    /// T0242: Der Zustand „keine Füllung“ steht als eigener Wert im Panel —
+    /// und ist nicht mit „Standard“ (Vorgabeton) zu verwechseln.
+    #[test]
+    fn keine_fuellung_wird_im_panel_angezeigt() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "mm" }))
+            .expect("Einheit Millimeter");
+        let r = app
+            .session_mut()
+            .execute(
+                "draw.wall",
+                &json!({
+                    "a": [0.0, 0.0],
+                    "b": [4000.0, 0.0],
+                    "thickness": 300.0
+                }),
+            )
+            .expect("Wand anlegen");
+        let id = r["created"][0].as_u64().expect("ID");
+        app.session_mut().selection = vec![id];
+
+        let vorher = texte(&mut app);
+        assert!(
+            vorher.iter().any(|t| t == "Standard"),
+            "Vorgabe zeigt „Standard“: {vorher:?}"
+        );
+
+        app.session_mut()
+            .execute("modify.set", &json!({ "ids": [id], "fill": "keine" }))
+            .expect("keine Füllung setzen");
+
+        let nachher = texte(&mut app);
+        assert!(
+            nachher.iter().any(|t| t == "Keine Füllung"),
+            "Panel nennt den Zustand: {nachher:?}"
+        );
+        assert!(
+            !nachher.iter().any(|t| t == "Standard"),
+            "und nicht mehr „Standard“: {nachher:?}"
+        );
     }
 
     /// Objekteigene Gruppe je Art — die erwartete Beschriftung, hier bewusst

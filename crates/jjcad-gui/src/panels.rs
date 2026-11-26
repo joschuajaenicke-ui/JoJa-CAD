@@ -1593,9 +1593,9 @@ pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Op
 
 /// Auswahl einer Farbe: Vorgaben aus der Liste, freie Farbe inline.
 ///
-/// `unset_label` benennt den Zustand "kein eigener Wert". Für Linien ist das
-/// "vom Layer", für Wandflächen gibt es keine Layerfarbe — dort heißt der
-/// Zustand "Standard" (Fläche hellt aus der Linienfarbe auf).
+/// `unset_label` benennt den Zustand „kein eigener Wert“. Für Linien ist das
+/// „vom Layer“, für Wandflächen gibt es keine Layerfarbe — dort heißt der
+/// Zustand „Standard“ (Fläche hellt aus der Linienfarbe auf).
 pub(crate) fn color_combo(
     ui: &mut Ui,
     salt: &str,
@@ -1607,61 +1607,154 @@ pub(crate) fn color_combo(
     let eid = ui.make_persistent_id(("ce", salt));
     let editing = ui.data(|d| d.get_temp::<bool>(eid)).unwrap_or(false);
     if editing {
-        let mut out = None;
-        let mut arr = [cur.r, cur.g, cur.b];
-        ui.horizontal(|ui| {
-            if ui.color_edit_button_srgb(&mut arr).changed() {
-                out = Some(Some(Color::rgb(arr[0], arr[1], arr[2])));
-            }
-            let hex = format!("#{:02X}{:02X}{:02X}", arr[0], arr[1], arr[2]);
-            ui.label(theme::mono(hex));
-            if ui.small_button(jjcad_core::i18n::tr("gui.panels.liste")).on_hover_text(jjcad_core::i18n::tr("gui.panels.vorgaben_anzeigen")).clicked() {
-                ui.data_mut(|d| d.insert_temp(eid, false));
-            }
-        });
-        return out;
+        return farb_editor(ui, eid, cur);
     }
     let (cap, sw) = if mixed {
         ("*variiert*".to_string(), None)
     } else if unset {
         (unset_label.to_string(), None)
     } else {
-        let hex = cur.to_hex();
-        let name = preset_name(&hex).unwrap_or_else(|| format!("eigene {}", hex));
-        (name, Some(cur))
+        (color_caption(cur), Some(cur))
     };
     dropdown(ui, salt, &cap, sw.map(BtnIcon::Color), |ui| {
         let mut out: Option<Option<Color>> = None;
         if ui.selectable_label(unset, unset_label).clicked() {
             out = Some(None);
         }
-        ui.separator();
-        for g in FARBGRUPPEN.iter() {
-            ui.add_space(2.0);
-            ui.label(
-                theme::bold(jjcad_core::i18n::tr(g.titel), 10.5).color(Palette::text_faint()),
-            );
-            ui.columns(2, |cols| {
-                for (i, (name, meaning, rgb)) in g.farben.iter().enumerate() {
-                    let cell = &mut cols[i % 2];
-                    let c = preset_color(*rgb);
-                    let sel = !unset && cur.to_hex() == c.to_hex();
-                    cell.horizontal(|ui| {
-                        swatch(ui, c);
-                        if ui.selectable_label(sel, preset_label(name, meaning)).clicked() {
-                            out = Some(Some(c));
-                        }
-                    });
-                }
-            });
-        }
-        ui.separator();
-        if ui.selectable_label(false, jjcad_core::i18n::tr("gui.panels.freie_farbe")).clicked() {
-            ui.data_mut(|d| d.insert_temp(eid, true));
-            out = Some(Some(cur));
+        if let Some(v) = farb_palette(ui, eid, cur, unset) {
+            out = Some(v);
         }
         out
     })
+}
+
+/// Füllung wählen — **keine Füllung**, die Vorgabe des Objekts oder eine Farbe
+/// (T0242).
+///
+/// Dieselbe Farbliste wie [`color_combo`], aber mit drei Zuständen: ohne
+/// Füllfarbe zeichnet eine Wand den Vorgabeton und eine Vollfläche die
+/// aufgehellte Linienfarbe — deshalb ist „keine Farbe“ nicht „keine Füllung“.
+/// `standard` ist der Ton, den das Objekt ohne eigene Füllfarbe zeigt (Startwert
+/// für die freie Farbe), `standard_label` sein Name („Standard“, „Wandton“).
+pub(crate) fn fuellung_combo(
+    ui: &mut Ui,
+    salt: &str,
+    wahl: jjcad_core::style::Fuellung,
+    standard: Color,
+    standard_label: &str,
+) -> Option<jjcad_core::style::Fuellung> {
+    use jjcad_core::style::Fuellung;
+    let eid = ui.make_persistent_id(("ce", salt));
+    let start = match wahl {
+        Fuellung::Farbe(c) => c,
+        _ => standard,
+    };
+    let editing = ui.data(|d| d.get_temp::<bool>(eid)).unwrap_or(false);
+    if editing {
+        return farb_editor(ui, eid, start).map(|v| match v {
+            Some(c) => Fuellung::Farbe(c),
+            None => Fuellung::Standard,
+        });
+    }
+    let (cap, sw) = match wahl {
+        Fuellung::Keine => (
+            jjcad_core::i18n::tr("gui.props.keine_fuellung").to_string(),
+            None,
+        ),
+        Fuellung::Standard => (standard_label.to_string(), None),
+        Fuellung::Farbe(c) => (color_caption(c), Some(c)),
+    };
+    dropdown(ui, salt, &cap, sw.map(BtnIcon::Color), |ui| {
+        let mut out = None;
+        if ui
+            .selectable_label(
+                wahl == Fuellung::Keine,
+                jjcad_core::i18n::tr("gui.props.keine_fuellung"),
+            )
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.keine_fuellung_hinweis"))
+            .clicked()
+        {
+            out = Some(Fuellung::Keine);
+        }
+        if ui
+            .selectable_label(
+                wahl == Fuellung::Standard,
+                standard_label,
+            )
+            .on_hover_text(jjcad_core::i18n::tr("gui.props.standard_hinweis"))
+            .clicked()
+        {
+            out = Some(Fuellung::Standard);
+        }
+        let unset = matches!(wahl, Fuellung::Keine | Fuellung::Standard);
+        if let Some(v) = farb_palette(ui, eid, start, unset) {
+            out = Some(match v {
+                Some(c) => Fuellung::Farbe(c),
+                None => Fuellung::Standard,
+            });
+        }
+        out
+    })
+}
+
+/// Beschriftung einer gewählten Farbe: Vorgabename oder eigener Hexwert.
+fn color_caption(cur: Color) -> String {
+    let hex = cur.to_hex();
+    preset_name(&hex).unwrap_or_else(|| format!("eigene {}", hex))
+}
+
+/// Inline-Editor der freien Farbe: Farbfläche, Hexwert, zurück zur Liste.
+fn farb_editor(ui: &mut Ui, eid: egui::Id, cur: Color) -> Option<Option<Color>> {
+    let mut out = None;
+    let mut arr = [cur.r, cur.g, cur.b];
+    ui.horizontal(|ui| {
+        if ui.color_edit_button_srgb(&mut arr).changed() {
+            out = Some(Some(Color::rgb(arr[0], arr[1], arr[2])));
+        }
+        let hex = format!("#{:02X}{:02X}{:02X}", arr[0], arr[1], arr[2]);
+        ui.label(theme::mono(hex));
+        if ui
+            .small_button(jjcad_core::i18n::tr("gui.panels.liste"))
+            .on_hover_text(jjcad_core::i18n::tr("gui.panels.vorgaben_anzeigen"))
+            .clicked()
+        {
+            ui.data_mut(|d| d.insert_temp(eid, false));
+        }
+    });
+    out
+}
+
+/// Die Vorgabefarben im Aufklappmenü — eine Liste für [`color_combo`] und
+/// [`fuellung_combo`].
+fn farb_palette(ui: &mut Ui, eid: egui::Id, cur: Color, unset: bool) -> Option<Option<Color>> {
+    let mut out: Option<Option<Color>> = None;
+    ui.separator();
+    for g in FARBGRUPPEN.iter() {
+        ui.add_space(2.0);
+        ui.label(theme::bold(jjcad_core::i18n::tr(g.titel), 10.5).color(Palette::text_faint()));
+        ui.columns(2, |cols| {
+            for (i, (name, meaning, rgb)) in g.farben.iter().enumerate() {
+                let cell = &mut cols[i % 2];
+                let c = preset_color(*rgb);
+                let sel = !unset && cur.to_hex() == c.to_hex();
+                cell.horizontal(|ui| {
+                    swatch(ui, c);
+                    if ui.selectable_label(sel, preset_label(name, meaning)).clicked() {
+                        out = Some(Some(c));
+                    }
+                });
+            }
+        });
+    }
+    ui.separator();
+    if ui
+        .selectable_label(false, jjcad_core::i18n::tr("gui.panels.freie_farbe"))
+        .clicked()
+    {
+        ui.data_mut(|d| d.insert_temp(eid, true));
+        out = Some(Some(cur));
+    }
+    out
 }
 
 pub(crate) fn section_title(ui: &mut Ui, icon: &str, title: &str) {

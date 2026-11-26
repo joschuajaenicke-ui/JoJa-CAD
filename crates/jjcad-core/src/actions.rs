@@ -1309,10 +1309,38 @@ fn apply_common(doc: &mut Document, e: &mut Entity, p: &Params, layer: Id) {
     if let Some(f) = form {
         e.style.loop_shape = Some(f);
     }
-    if let Some(c) = p.color("fill") {
-        e.style.fill = Some(c);
-    }
+    fuellung_aus_params(&mut e.style, p);
     let _ = doc;
+}
+
+/// Füllung eines Objekts aus den Parametern übernehmen (T0242).
+///
+/// - `fill: "<#RRGGBB>"` — setzt die Füllfarbe und schaltet die Fläche ein,
+/// - `fill: "none"/"bylayer"` — nimmt die Farbe zurück (Vorgabe des Objekts),
+/// - `fill: "keine"/"ohne"/"aus"` — schaltet die Füllfläche **ganz** ab
+///   (`EntityStyle::no_fill`): keine Fläche, kein Muster, nur die Umrandung,
+/// - `fill: "standard"/"vorgabe"` — nimmt ein „keine“ wieder zurück.
+///
+/// Ohne Angabe bleibt der Stil, wie er ist. Eine gesetzte Farbe lässt sich mit
+/// `color` nicht verwechseln: `Params::color` liest nur einen Farbwert.
+fn fuellung_aus_params(style: &mut EntityStyle, p: &Params) {
+    if let Some(c) = p.color("fill") {
+        style.fill = Some(c);
+        style.no_fill = false;
+        return;
+    }
+    let Some(roh) = p.text("fill") else {
+        return;
+    };
+    match roh.trim().to_lowercase().as_str() {
+        "none" | "bylayer" => {
+            style.fill = None;
+            style.no_fill = false;
+        }
+        "keine" | "ohne" | "aus" | "nofill" | "no_fill" => style.no_fill = true,
+        "standard" | "vorgabe" | "auto" => style.no_fill = false,
+        _ => {}
+    }
 }
 
 /// Neue Bemaßung ist **schwarz** (T0062).
@@ -3301,15 +3329,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     if let Some(f) = form {
                         e.style.loop_shape = Some(f);
                     }
-                    if let Some(c) = p.color("fill") {
-                        e.style.fill = Some(c);
-                    } else if p
-                        .text("fill")
-                        .map(|t| t.eq_ignore_ascii_case("none") || t.eq_ignore_ascii_case("bylayer"))
-                        .unwrap_or(false)
-                    {
-                        e.style.fill = None;
-                    }
+                    fuellung_aus_params(&mut e.style, &p);
                     // Punktsymbole an Anfang und Ende (T0210) — der Punkt
                     // trägt sein Symbol im Anfangsfeld. Nur Punkt und Linie
                     // zeichnen es; eine Maßkette führt ihr Symbol an den
