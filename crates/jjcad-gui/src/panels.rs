@@ -1042,6 +1042,7 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     // Ein Element für Einzelmaß und Maßkette (T0154).
                     "dim.linear" | "dim.chain" | "dim.chain.h" | "dim.chain.v"
                     | "dim.chain.d" => crate::props::bemassung(app, ui, ziel),
+                    "dim.radius" => crate::props::radiusbemassung(app, ui, ziel),
                     "sheet.viewport_tool" => crate::props::viewport(app, ui, ziel),
                     "draw.volume" | "draw.volume.points" | "draw.volume.paint" => {
                         crate::props::volumen(app, ui, ziel)
@@ -1088,6 +1089,9 @@ pub fn properties(app: &mut App, ui: &mut Ui) {
                     }
                     Some(jjcad_core::model::EntityKind::Dim { .. }) => {
                         crate::props::bemassung(app, ui, ziel)
+                    }
+                    Some(jjcad_core::model::EntityKind::DimRadius { .. }) => {
+                        crate::props::radiusbemassung(app, ui, ziel)
                     }
                     Some(jjcad_core::model::EntityKind::Volume { .. }) => {
                         crate::props::volumen(app, ui, ziel)

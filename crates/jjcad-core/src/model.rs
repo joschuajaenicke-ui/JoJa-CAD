@@ -876,6 +876,27 @@ pub enum EntityKind {
         #[serde(default = "default_dim_symbol")]
         symbol: String,
     },
+    /// Radiusbemaßung eines Kreises oder Bogens (T0252).
+    ///
+    /// Die Maßlinie läuft vom **Mittelpunkt** zum Bogenpunkt in Richtung
+    /// `angle`; dort sitzt der Pfeil, und die Maßzahl „R …“ steht außerhalb
+    /// des Kreises an der Verlängerung. Gespeichert sind Mittelpunkt und
+    /// Radius als Werte — wie bei der Maßkette, die ihre Basispunkte trägt:
+    /// ändert sich der Kreis später, bleibt die Bemaßung an ihrer Stelle und
+    /// kann neu gesetzt werden.
+    ///
+    /// `angle` ist die Richtung des Bogenpunktes in Bogenmaß (Nullrichtung
+    /// +X, mathematisch positiv). Sie dreht beim Drehen und Spiegeln mit
+    /// (`transform::transform_kind`).
+    DimRadius {
+        c: Vec2,
+        r: f64,
+        #[serde(default)]
+        angle: f64,
+        /// Maßtext überschreiben (z. B. „R 50“). Leer = „R“ und die Zahl.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        override_text: Option<String>,
+    },
     /// Grundriss-Kote: Kreis-Symbol mit verknüpftem Höhenwert daneben.
     ///
     /// Der Kreismittelpunkt sitzt auf `p`; der Höhenwert steht rechts davon
@@ -1084,6 +1105,7 @@ impl EntityKind {
             EntityKind::Text { .. }
             | EntityKind::Room { .. }
             | EntityKind::Dim { .. }
+            | EntityKind::DimRadius { .. }
             | EntityKind::ElevationPlan { .. }
             | EntityKind::ElevationSection { .. } => RANG_BESCHRIFTUNG,
         }
@@ -1142,6 +1164,7 @@ impl EntityKind {
             EntityKind::Text { .. } => "Text",
             EntityKind::Room { .. } => "Raumstempel",
             EntityKind::Dim { .. } => "Maßkette",
+            EntityKind::DimRadius { .. } => "Radiusmaß",
             EntityKind::ElevationPlan { .. } => "Grundriss-Kote",
             EntityKind::ElevationSection { .. } => "Schnitt-Kote",
             EntityKind::Wall { .. } => "Wand",
@@ -1169,6 +1192,7 @@ impl EntityKind {
         matches!(
             self,
             EntityKind::Dim { .. }
+                | EntityKind::DimRadius { .. }
                 | EntityKind::ElevationPlan { .. }
                 | EntityKind::ElevationSection { .. }
         )

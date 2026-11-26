@@ -65,6 +65,12 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Punktsymbol und steht in Messrichtung; die Maßlinie endet **genau am
    äußeren Basispunkt** — den Abschluss markiert die Marke, nicht ein
    Überstand der Linie.
+   **Radius** (Ribbon ▸ Bemaßung ▸ „Radius"): einen **Kreis oder Bogen**
+   anklicken. Die Maßlinie läuft vom Mittelpunkt zum Bogenpunkt, ihre Richtung
+   bestimmt der **Klickpunkt**; die Maßzahl „R …" steht außerhalb des Kreises.
+   Maßtext und Richtung stehen im Eigenschaften-Panel (Gruppe „Maß"). Das
+   Werkzeug bleibt für weitere Radien aktiv, `Esc` beendet es; ein Klick neben
+   Kreis und Bogen legt nichts an.
 4. **Hotbar**: Tasten `1`–`0`. Aktives Werkzeug + Klick auf einen leeren Slot verknüpft es.
    Läuft das **Einfügen eines Blocks**, nimmt der angeklickte Slot den Block auf (der Slot
    zeigt dann die Miniaturaansicht des Blocks, sein Tooltip den Blocknamen); die Taste `1`–`0`

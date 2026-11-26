@@ -653,6 +653,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   verwerfen: `App::escape_pressed` schickt die Maßketten-Werkzeuge in
   `finish_tool` (ohne einen Klick bricht Esc ab), das Punktwerkzeug endet ohne
   die Auswahl zu leeren.
+- **Radiusbemaßung (T0252)**: Ein Kreis oder Bogen lässt sich mit `dim.radius`
+  bemaßen — eine **eigene Objektart** `EntityKind::DimRadius { c, r, angle,
+  override_text }` (nicht eine Maßkette mit Sonderfall: sie hat keine
+  Messpunkte, sondern Mittelpunkt, Radius und eine Richtung). Angetippt wird
+  der **Kreis oder Bogen**; die Richtung der Maßlinie ist die Richtung vom
+  Mittelpunkt zum Klickpunkt (roher Zeiger, nicht der Fangpunkt — der läge auf
+  Mittelpunkt oder Quadrant), `angle` (Grad) setzt sie ausdrücklich. Gezeichnet
+  wird in `render::render_dim_radius`: Maßlinie vom Mittelpunkt zum Bogenpunkt,
+  Marke dort nach `DimStyle::arrow`, Mittelpunktkreuz und die Maßzahl „R …“
+  außerhalb des Kreises; `render::preview_dim_radius` ist dieselbe Anzeige für
+  die Vorschau. Trefferflächen kommen wie bei der Maßkette aus `trefferbild`.
+  Einsatz und Standardebene „Beschriftung“; Griffe: Mittelpunkt (verschiebt)
+  und Bogenpunkt (dreht die Richtung, der Radius bleibt). Der Radius ist eine
+  **Anzeige** — geändert wird er am bemaßten Kreis; Maßtext und Richtung stehen
+  im Eigenschaften-Panel (`props::radiusbemassung`). Andere Objektarten sind
+  ein Fehler (T0038). Prüfweg: `cargo test -p jjcad-core --test
+  radien_bemassen` und `cargo test -p jjcad-gui tests_radiusmass`; Prüfbild
+  `--demo radiusmass`.
 - **Orientierung der Maßkette (T0166)**: Eine Maßkette hat **eine** Orientierung
   — `Dim::angle` (Bogenmaß, Richtung der Maßlinie). Waagerecht (0°) und senkrecht
   (π/2) sind nur zwei Winkel desselben Objekts; `DimAxis` ist seitdem **keine
