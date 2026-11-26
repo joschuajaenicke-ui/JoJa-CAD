@@ -460,18 +460,23 @@ ausgeblendet.
   (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
   zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
-- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): zwei **Linien** nacheinander
-  anklicken, die sich schneiden; der Schnittpunkt ist die Ecke. Danach bestimmt der
-  Mauszeiger das Maß — der Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt
-  es sich tippen und mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der
-  Zeiger darf dabei auf dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke:
-  gekürzte Linien und den Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**).
-  Welcher Teil einer Linie stehen bleibt, entscheidet die **Klickstelle** — geklickt wird
-  die Seite, die erhalten bleibt. Abrunden braucht einen Radius, die Phase ein Maß auf
-  beiden Schenkeln; ist es für eine der Linien zu groß, meldet der Chat „Das Maß ist für
-  die kürzere Linie zu groß" und die Zeichnung bleibt unverändert. Nach dem Setzen ist das Werkzeug für das
-  nächste Paar bereit, `ESC` beendet es.
-- **Linien** werden als Kapsel gezeichnet:- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
+- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): die **Ecke** wählen, dann das
+  Maß. Ein einziger Klick genügt, wenn der Zeiger die Ecke schon trifft — den
+  **Schnittpunkt zweier Linien** oder den **Knick einer Polylinie**; beide Linien bzw.
+  die beiden Nachbarstücke werden dabei gemeinsam gewählt. Sonst wählt der erste Klick
+  eine Linie und der zweite die Partnerlinie. Danach bestimmt der Mauszeiger das Maß —
+  den Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt es sich tippen und
+  mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der Zeiger darf dabei auf
+  dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke: gekürzte Schenkel und den
+  Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**). Welcher Teil einer Linie
+  stehen bleibt, entscheidet die **Klickstelle** — geklickt wird die Seite, die erhalten
+  bleibt. Bei der Polylinie bleibt alles **ein** Objekt: der Scheitelpunkt wird durch die
+  beiden Anschlusspunkte ersetzt, dazwischen liegt der Bogen. Abrunden braucht einen
+  Radius, die Phase ein Maß auf beiden Schenkeln; ist es für den kürzesten Schenkel zu
+  groß, meldet der Chat „Das Maß ist für die kürzere Linie zu groß" und die Zeichnung
+  bleibt unverändert. Offene Enden einer Polylinie und Knicke an Bogenstücken sind keine
+  Ecken. Nach dem Setzen ist das Werkzeug für die nächste Ecke bereit, `ESC` beendet es.
+- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
 - **Linienstärke neuer Objekte** (Einstellungen ▸ Voreinstellungen): eine Zeile je Objektart
