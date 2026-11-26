@@ -227,6 +227,34 @@ fn senkrechte_kette_liest_von_rechts() {
     assert!((y - 1500.0).abs() < 50.0, "Maßzahl nicht mittig: y {y}");
 }
 
+/// Kurzer Abschnitt: die Maßzahl steht **trotzdem** mittig über der
+/// Maßlinie — nicht seitlich daneben (T0251).
+///
+/// Der Abschnitt ist mit 395 mm schmaler als die Maßzahl „395“ (bei 2,5 mm
+/// Texthöhe rund 435 mm). Früher wanderte der Text in diesem Fall hinter das
+/// Segmentende, die Zahl stand neben der Kette statt darüber.
+#[test]
+fn kurzer_abschnitt_traegt_die_masszahl_ueber_der_linie() {
+    let (s, id) = kette(&[[0.0, 0.0], [2.0, 0.0], [2.395, 0.0]], [0.0, -1.2], "x");
+    let t = texte(&s, id);
+    assert_eq!(t.len(), 2, "zwei Maßzahlen erwartet: {t:?}");
+    // Zweite Maßzahl „395“: Mitte des Abschnitts 2000…2395, 150 mm über der
+    // Maßlinie (y = −1200).
+    let (x, y, _, text) = &t[1];
+    assert!(
+        (x - 2197.5).abs() < 0.5,
+        "Maßzahl „{text}“ steht nicht mittig über ihrem Abschnitt: x {x}"
+    );
+    assert!(
+        (y - (-1050.0)).abs() < 0.5,
+        "Maßzahl „{text}“ sitzt nicht über der Maßlinie: y {y}"
+    );
+    assert!(
+        *x >= 2000.0 && *x <= 2395.0,
+        "Maßzahl „{text}“ steht neben der Maßkette: x {x}"
+    );
+}
+
 /// Einzelmaß folgt denselben Regeln wie die Kette (eine Darstellung).
 #[test]
 fn einzelmass_folgt_denselben_regeln() {

@@ -4750,14 +4750,12 @@ fn render_dim_chain(
         return;
     }
     let style = &ctx.doc.dim_style;
-    let a = ctx.a(1.0);
     let ext_gap = ctx.a(style.ext_gap.max(style.text_height * DIM_EXT_GAP_H));
     let over = ctx.a(style.ext_overshoot);
     let arrow = ctx.a(style.arrow_size);
     let text_h = ctx.a(style.text_height);
-    // Bild 3: Begrenzungsstrich, Überstand der Maßlinie und Textabstand sind
-    // Anteile der Texthöhe (die Pfeilgröße gilt nur für Pfeil und Punkt).
-    let marke = ctx.a(style.text_height * DIM_MARKE_H);
+    // Bild 3: Überstand der Maßlinie und Textabstand sind Anteile der
+    // Texthöhe (die Pfeilgröße gilt nur für Pfeil und Punkt).
     let text_gap = ctx.a(style.text_gap)
         .max(ctx.a(style.text_height * DIM_TEXT_ABSTAND_H));
     let (dir, _) = dim_achse(angle);
@@ -4893,19 +4891,16 @@ fn render_dim_chain(
             ArrowKind::Slash | ArrowKind::Dot | ArrowKind::None => {}
         }
         let mid = (p0 + p1) * 0.5;
-        let text_w = estimate_text_width(&txt, text_h);
-        let span = p0.dist(p1);
         let mut ta = text_angle;
         if ta > std::f64::consts::FRAC_PI_2 + 0.01 || ta < -std::f64::consts::FRAC_PI_2 - 0.01 {
             ta += std::f64::consts::PI;
         }
-        let pos = if text_w + a > span {
-            // Zu schmal für die Maßzahl: außerhalb des Segments, damit sie
-            // nicht auf dem Begrenzungsstrich des Nachbarsegments liegt.
-            p1 + dir * (text_w * 0.5 + marke * 0.5 + a)
-        } else {
-            mid + n * text_gap
-        };
+        // Die Maßzahl steht **immer** mittig über ihrem Abschnitt (T0251).
+        // Früher wanderte sie bei einem Abschnitt, der schmaler als der Text
+        // ist, seitlich hinter das Segmentende — sie stand dann neben der
+        // Maßkette statt darüber. Diese Sonderregel ist entfallen: die Lage
+        // hängt allein an der Mitte des Abschnitts.
+        let pos = mid + n * text_gap;
         dl.push(Prim {
             shape: Shape::Text(TextPrim {
                 pos: xf.apply(pos),
