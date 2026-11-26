@@ -2,9 +2,10 @@
 //!
 //! Geprüft wird über die Befehlsschicht (`modify.set`, `draw.wall`, `draw.fill`)
 //! und die Displayliste — dieselbe Quelle, aus der GUI, PDF und PNG zeichnen.
-//! „Keine Füllung“ heißt: keine Füllfläche, kein Muster, nur die Umrandung.
-//! Das ist **nicht** dasselbe wie „keine Füllfarbe“ — ohne Farbe zeichnet eine
-//! Wand den Vorgabeton und eine Vollfläche die aufgehellte Linienfarbe.
+//! „Keine Füllung“ heißt: **kein Flächenton**. Muster und Umrandung bleiben —
+//! eine Schraffur ohne Hintergrundfläche ist gewollt (Turn 2). Das ist
+//! **nicht** dasselbe wie „keine Füllfarbe“ — ohne Farbe zeichnet eine Wand den
+//! Vorgabeton und eine Vollfläche die aufgehellte Linienfarbe.
 
 use jjcad_core::model::{Document, Entity, EntityKind};
 use jjcad_core::render::{render_document, DisplayList, Prim, RenderCtx, Shape};
@@ -87,7 +88,7 @@ fn wand_ohne_fuellung_hat_keine_flaeche_aber_ihre_kanten() {
 }
 
 #[test]
-fn wand_ohne_fuellung_zeichnet_auch_kein_muster() {
+fn wand_ohne_fuellung_behaelt_ihr_muster() {
     let mut s = neue_session();
     let id = wand(&mut s, json!({"hatch": "mauerwerk"}));
     let mit_muster = linien(&liste(&s.doc), id).len();
@@ -110,13 +111,43 @@ fn wand_ohne_fuellung_zeichnet_auch_kein_muster() {
     let dl = liste(&s.doc);
     assert!(
         fuellungen(&dl, id).is_empty(),
-        "keine Fläche unter dem Muster"
+        "kein Flächenton unter dem Muster"
     );
     assert_eq!(
         linien(&dl, id).len(),
-        ohne_muster,
-        "ohne Füllung bleibt nur die Umrandung, das Muster fällt weg"
+        mit_muster,
+        "das Muster bleibt ohne Flächenton sichtbar ({mit_muster} Linien)"
     );
+    assert!(
+        mit_muster > ohne_muster,
+        "und es ist mehr als die bloße Umrandung ({ohne_muster})"
+    );
+}
+
+/// Ohne Muster bleibt von einer Wand ohne Flächenton nur die Umrandung.
+#[test]
+fn wand_ohne_fuellung_und_ohne_muster_ist_nur_die_umrandung() {
+    let mut s = neue_session();
+    let ohne = wand(&mut s, json!({"hatch": "none"}));
+    let mut p = json!({"hatch": "none"});
+    p["a"] = json!([0.0, 5000.0]);
+    p["b"] = json!([4000.0, 5000.0]);
+    p["thickness"] = json!(300.0);
+    let mit = s
+        .execute("draw.wall", &p)
+        .expect("zweite Wand")["created"][0]
+        .as_u64()
+        .expect("ID");
+    setzen(&mut s, mit, json!({"fill": "keine"}));
+
+    let dl = liste(&s.doc);
+    assert!(fuellungen(&dl, mit).is_empty(), "kein Flächenton");
+    assert_eq!(
+        linien(&dl, mit).len(),
+        linien(&dl, ohne).len(),
+        "nur die Umrandung, keine Musterlinien"
+    );
+    let _ = ohne;
 }
 
 #[test]
@@ -164,21 +195,50 @@ fn flaeche(session: &mut Session, params: serde_json::Value) -> u64 {
     r["created"][0].as_u64().expect("neue Flächen-ID")
 }
 
+/// „Keine Füllung“ nimmt nur den Flächenton: das Muster bleibt (T0242).
 #[test]
-fn flaeche_ohne_fuellung_zeigt_nur_die_umrandung() {
+fn flaeche_ohne_fuellung_behaelt_das_muster() {
     let mut s = neue_session();
-    let id = flaeche(&mut s, json!({"pattern": "mauerwerk", "border": true}));
+    let id = flaeche(
+        &mut s,
+        json!({"pattern": "mauerwerk", "border": true, "fill": GRUEN.to_hex()}),
+    );
+    let mit_ton = dl_prims(&s.doc, id).len();
     assert!(
-        !fuellungen(&liste(&s.doc), id).is_empty()
-            || dl_prims(&s.doc, id).len() > 1,
-        "Vorgabe: die Fläche zeichnet etwas"
+        !fuellungen(&liste(&s.doc), id).is_empty(),
+        "Ausgangslage: die Fläche hat einen Ton"
     );
 
     setzen(&mut s, id, json!({"fill": "keine"}));
 
     let dl = liste(&s.doc);
-    assert!(fuellungen(&dl, id).is_empty(), "keine Fläche");
+    assert!(fuellungen(&dl, id).is_empty(), "kein Flächenton");
     let prims = dl_prims_aus(&dl, id);
+    assert_eq!(
+        prims.len(),
+        mit_ton - 1,
+        "nur der Flächenton fällt weg, Muster und Umrandung bleiben"
+    );
+    assert!(
+        prims.iter().any(|p| matches!(p.shape, Shape::Poly(_, true))),
+        "die Umrandung ist noch da"
+    );
+    assert!(
+        prims
+            .iter()
+            .any(|p| matches!(p.shape, Shape::Line(..))),
+        "und das Muster wird gezeichnet"
+    );
+}
+
+/// Vollfläche ohne Ton: da es kein Muster gibt, bleibt nur die Umrandung.
+#[test]
+fn flaeche_ohne_fuellung_mit_vollflaeche_zeigt_nur_die_umrandung() {
+    let mut s = neue_session();
+    let id = flaeche(&mut s, json!({"pattern": "solid", "border": true}));
+    setzen(&mut s, id, json!({"fill": "keine"}));
+
+    let prims = dl_prims(&s.doc, id);
     assert_eq!(prims.len(), 1, "nur die Umrandung bleibt: {prims:?}");
     assert!(
         matches!(prims[0].shape, Shape::Poly(_, true)),
@@ -189,11 +249,11 @@ fn flaeche_ohne_fuellung_zeigt_nur_die_umrandung() {
 #[test]
 fn flaeche_ohne_fuellung_und_ohne_umrandung_ist_leer() {
     let mut s = neue_session();
-    let id = flaeche(&mut s, json!({"pattern": "mauerwerk", "border": true}));
+    let id = flaeche(&mut s, json!({"pattern": "solid", "border": true}));
     setzen(&mut s, id, json!({"fill": "keine", "border": false}));
     assert!(
         dl_prims(&s.doc, id).is_empty(),
-        "ohne Füllung und Umrandung zeichnet die Fläche nichts"
+        "ohne Ton, Muster und Umrandung zeichnet die Fläche nichts"
     );
 }
 

@@ -1546,6 +1546,55 @@ pub(crate) fn pick_combo<T: PartialEq + Copy>(
     })
 }
 
+#[cfg(test)]
+mod tests_fuellung {
+    use jjcad_core::style::Fuellung;
+
+    fn sammle(shape: &egui::Shape, out: &mut Vec<String>) {
+        match shape {
+            egui::Shape::Text(t) => out.push(t.galley.text().to_string()),
+            egui::Shape::Vec(list) => {
+                for s in list {
+                    sammle(s, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// T0242, Turn 2: „Standard“ steht im Aufklappmenü **vor** „Keine
+    /// Füllung“ — der Normalfall zuerst, die Ausnahme darunter.
+    #[test]
+    fn standard_steht_vor_keiner_fuellung() {
+        // `App::with_ctx` richtet Schrift und Farben ein — die Farbliste des
+        // Menüs braucht die benannte Schriftfamilie „bold“.
+        let app = crate::app::App::with_ctx(egui::Context::default());
+        let ctx = app.ctx.clone();
+        let ausgabe = ctx.run(Default::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let eid = ui.make_persistent_id(("ce", "reihenfolge"));
+                let _ = super::fuellung_menue(ui, Fuellung::Keine, "Standard", eid, jjcad_core::style::Color::rgb(0, 0, 0));
+            });
+        });
+        let mut texte = Vec::new();
+        for gezeichnet in &ausgabe.shapes {
+            sammle(&gezeichnet.shape, &mut texte);
+        }
+        let standard = texte
+            .iter()
+            .position(|t| t == "Standard")
+            .unwrap_or_else(|| panic!("„Standard“ fehlt: {texte:?}"));
+        let keine = texte
+            .iter()
+            .position(|t| t == "Keine Füllung")
+            .unwrap_or_else(|| panic!("„Keine Füllung“ fehlt: {texte:?}"));
+        assert!(
+            standard < keine,
+            "„Standard“ muss vor „Keine Füllung“ stehen: {texte:?}"
+        );
+    }
+}
+
 /// Auswahl einer Strichstärke: Vorgaben aus der Liste, freier Wert inline.
 pub(crate) fn weight_combo(ui: &mut Ui, salt: &str, cur: f64, mixed: bool) -> Option<f64> {
     let eid = ui.make_persistent_id(("we", salt));
@@ -1665,36 +1714,49 @@ pub(crate) fn fuellung_combo(
         Fuellung::Farbe(c) => (color_caption(c), Some(c)),
     };
     dropdown(ui, salt, &cap, sw.map(BtnIcon::Color), |ui| {
-        let mut out = None;
-        if ui
-            .selectable_label(
-                wahl == Fuellung::Keine,
-                jjcad_core::i18n::tr("gui.props.keine_fuellung"),
-            )
-            .on_hover_text(jjcad_core::i18n::tr("gui.props.keine_fuellung_hinweis"))
-            .clicked()
-        {
-            out = Some(Fuellung::Keine);
-        }
-        if ui
-            .selectable_label(
-                wahl == Fuellung::Standard,
-                standard_label,
-            )
-            .on_hover_text(jjcad_core::i18n::tr("gui.props.standard_hinweis"))
-            .clicked()
-        {
-            out = Some(Fuellung::Standard);
-        }
-        let unset = matches!(wahl, Fuellung::Keine | Fuellung::Standard);
-        if let Some(v) = farb_palette(ui, eid, start, unset) {
-            out = Some(match v {
-                Some(c) => Fuellung::Farbe(c),
-                None => Fuellung::Standard,
-            });
-        }
-        out
+        fuellung_menue(ui, wahl, standard_label, eid, start)
     })
+}
+
+/// Inhalt des Aufklappmenüs der Füllung — eine Quelle für die Anzeige und für
+/// den Test der Reihenfolge.
+///
+/// Oben steht der Normalfall `Standard`, darunter „Keine Füllung“ (T0242,
+/// Turn 2: die Reihenfolge war umgekehrt), dann die Farbvorgaben.
+fn fuellung_menue(
+    ui: &mut Ui,
+    wahl: jjcad_core::style::Fuellung,
+    standard_label: &str,
+    eid: egui::Id,
+    start: Color,
+) -> Option<jjcad_core::style::Fuellung> {
+    use jjcad_core::style::Fuellung;
+    let mut out = None;
+    if ui
+        .selectable_label(wahl == Fuellung::Standard, standard_label)
+        .on_hover_text(jjcad_core::i18n::tr("gui.props.standard_hinweis"))
+        .clicked()
+    {
+        out = Some(Fuellung::Standard);
+    }
+    if ui
+        .selectable_label(
+            wahl == Fuellung::Keine,
+            jjcad_core::i18n::tr("gui.props.keine_fuellung"),
+        )
+        .on_hover_text(jjcad_core::i18n::tr("gui.props.keine_fuellung_hinweis"))
+        .clicked()
+    {
+        out = Some(Fuellung::Keine);
+    }
+    let unset = matches!(wahl, Fuellung::Keine | Fuellung::Standard);
+    if let Some(v) = farb_palette(ui, eid, start, unset) {
+        out = Some(match v {
+            Some(c) => Fuellung::Farbe(c),
+            None => Fuellung::Standard,
+        });
+    }
+    out
 }
 
 /// Beschriftung einer gewählten Farbe: Vorgabename oder eigener Hexwert.

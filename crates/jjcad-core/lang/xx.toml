@@ -1887,7 +1887,7 @@
 # flaeche_und_volumen_erscheinen_am_platzierten_objekt = "Fläche und Volumen erscheinen am platzierten Objekt"
 # fuellfarbe = "Füllfarbe"
 # keine_fuellung = "Keine Füllung"
-# keine_fuellung_hinweis = "zeichnet nur die Umrandung — keine Fläche, kein Muster"
+# keine_fuellung_hinweis = "zeichnet die Fläche ohne Hintergrundton — ein Muster bleibt sichtbar"
 # standard_hinweis = "Vorgabe des Objekts: Wandton bzw. aufgehellte Linienfarbe"
 # fuellflaeche = "Füllfläche"
 # gesamtflaeche = "Gesamtfläche"
