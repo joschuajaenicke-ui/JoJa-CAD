@@ -57,6 +57,10 @@ pub struct Texteingabe {
     pub valign: TextAlignV,
     /// `Some` = vorhandener Text wird geändert, `None` = neuer Text
     pub id: Option<EId>,
+    /// `Some(i)` = es wird die **Höhenangabe** des Abschnitts `i` einer
+    /// Maßkette bearbeitet (T0253), nicht ein Textobjekt. Der Inhalt steht
+    /// dann in `Dim::heights`, `id` ist die Maßkette.
+    pub hoehe: Option<usize>,
     /// Farbe, in der der Text in der Zeichnung erscheint (Objekt- oder Layerfarbe)
     pub farbe: Color,
     /// Schriftart — beim Ändern aus dem Text, beim Neuen aus dem Panel.
@@ -109,6 +113,7 @@ impl Texteingabe {
             align,
             valign,
             id,
+            hoehe: None,
             farbe,
             runs: Vec::new(),
             line_spacing,
@@ -265,6 +270,69 @@ pub fn start_entitaet(app: &mut App, id: EId) -> bool {
     true
 }
 
+/// Höhenangabe eines Maßketten-Abschnitts bearbeiten (T0253).
+///
+/// Das Feld steht **unter** dem Abschnitt — dieselbe Lage, Größe und Schrift
+/// wie die gezeichnete Angabe ([`jjcad_core::render::dim_hoehe_lagen`]). Der
+/// Inhalt ist ein einfaches einzeiliges Textfeld; Esc und Enter übernehmen,
+/// ein Klick daneben ebenfalls, Rechtsklick bricht ab. Ein leerer Text nimmt
+/// die Angabe zurück.
+pub fn start_hoehe(app: &mut App, id: EId, index: usize) -> bool {
+    let Some(e) = app.doc().entity(id) else {
+        return false;
+    };
+    let EntityKind::Dim {
+        pts,
+        line_pos,
+        angle,
+        heights,
+        ..
+    } = &e.kind
+    else {
+        return false;
+    };
+    let skala = app.doc().plan_scale_of_layer(e.layer).max(0.01);
+    let style = &app.doc().dim_style;
+    let text_h = style.text_height * skala;
+    let gap = style
+        .text_gap
+        .max(style.text_height * render::DIM_TEXT_ABSTAND_H)
+        * skala;
+    let Some((_, pos, ta, valign)) =
+        render::dim_hoehe_lagen(pts, *line_pos, *angle, gap).get(index).copied()
+    else {
+        return false;
+    };
+    let text = heights.get(index).cloned().unwrap_or_default();
+    let farbe = app.doc().effective_color(e);
+    app.tool = None;
+    app.session_mut().clear_selection();
+    let mut t = Texteingabe::neu(
+        pos,
+        text_h,
+        text,
+        ta,
+        TextAlignH::Center,
+        valign,
+        Some(id),
+        farbe,
+        jjcad_core::model::TextFont::DinMittel,
+        1.0,
+        false,
+        false,
+        None,
+    );
+    t.hoehe = Some(index);
+    let neu = t.text.trim().is_empty();
+    app.ui.texteingabe = Some(t);
+    app.mitteilung(jjcad_core::i18n::tr(if neu {
+        "gui.textedit.hoehe_eingeben_esc_uebernimmt"
+    } else {
+        "gui.textedit.hoehe_aendern_esc_uebernimmt"
+    }));
+    true
+}
+
 /// Text unter dem Punkt (Weltkoordinate) — es zählt der sichtbare Rahmen, also
 /// dieselbe Fläche, die bei Auswahl blau markiert wird.
 ///
@@ -359,6 +427,22 @@ fn uebernehmen(app: &mut App, ctx: &egui::Context) {
         return;
     };
     ctx.memory_mut(|m| m.stop_text_input());
+    // Höhenangabe einer Maßkette (T0253): ein einfaches Textfeld je
+    // Abschnitt. Ein leerer Text nimmt sie zurück.
+    if let (Some(id), Some(index)) = (t.id, t.hoehe) {
+        let text = t.text.trim().to_string();
+        match app.session_mut().execute(
+            "dim.height.set",
+            &json!({"ids": [id], "index": index, "text": text}),
+        ) {
+            Ok(_) => {
+                app.mark_changed();
+                app.mitteilung(jjcad_core::i18n::tr("gui.textedit.hoehe_geaendert"));
+            }
+            Err(e) => app.toast(e),
+        }
+        return;
+    }
     // Raumstempel: bearbeitet wird nur der Name (Überschrift). Der
     // Flächeninhalt ist abgeleitet und wird nie geschrieben (T0220). Ein
     // leerer Name ist gültig — dann steht im Stempel nur die Fläche.
@@ -508,6 +592,19 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
     // TextEdit verbraucht die Tastendrücke selbst, und egui nimmt einem Feld
     // bei Esc den Fokus.
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        uebernehmen(app, &ctx);
+        return;
+    }
+    // Eine Höhenangabe ist **einzeilig** (T0253): Enter bestätigt sie, statt
+    // eine Zeile anzuhängen.
+    if app
+        .ui
+        .texteingabe
+        .as_ref()
+        .map(|t| t.hoehe.is_some())
+        .unwrap_or(false)
+        && ctx.input(|i| i.key_pressed(egui::Key::Enter))
+    {
         uebernehmen(app, &ctx);
         return;
     }
@@ -661,9 +758,13 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             ui.visuals_mut().text_cursor.blink = false;
             ui.visuals_mut().selection.bg_fill =
                 Color32::from_rgba_unmultiplied(0x2F, 0x8C, 0xF0, 90);
+            let feld = if t.hoehe.is_some() {
+                egui::TextEdit::singleline(&mut t.text).layouter(&mut setzer)
+            } else {
+                egui::TextEdit::multiline(&mut t.text).layouter(&mut setzer)
+            };
             let resp = ui.add(
-                egui::TextEdit::multiline(&mut t.text)
-                    .layouter(&mut setzer)
+                feld
                     .id(feld_id())
                     .frame(false)
                     .margin(Vec2::ZERO)
@@ -682,8 +783,13 @@ pub fn show(app: &mut App, ui: &mut Ui, rect: Rect, view: View) {
             // Hinweis nur solange nichts getippt ist: beim Schreiben soll nur
             // der Text dastehen. Er steht unter dem Text, nicht dahinter.
             if t.text.is_empty() {
+                let hinweis = if t.hoehe.is_some() {
+                    "gui.textedit.hoehe_hinweis"
+                } else {
+                    "gui.textedit.esc_uebernimmt_hinweis"
+                };
                 ui.label(
-                    egui::RichText::new(jjcad_core::i18n::tr("gui.textedit.esc_uebernimmt_hinweis"))
+                    egui::RichText::new(jjcad_core::i18n::tr(hinweis))
                         .size(10.0)
                         .color(Palette::text_faint()),
                 );
@@ -1859,5 +1965,86 @@ mod tests_raumstempel_name {
             None,
             "in der Ecke der Umgrenzung liegt kein Text"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_hoehe {
+    use super::*;
+    use crate::app::App;
+    use jjcad_core::units::Unit;
+
+    fn app_mit_kette() -> (App, EId) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &serde_json::json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        (app, antwort["created"][0].as_u64().expect("Kennung"))
+    }
+
+    fn hoehen(app: &App, id: EId) -> Vec<String> {
+        match &app.doc().entity(id).expect("Maßkette").kind {
+            EntityKind::Dim { heights, .. } => heights.clone(),
+            _ => panic!("keine Maßkette"),
+        }
+    }
+
+    #[test]
+    fn feld_schreibt_die_hoehenangabe_des_abschnitts() {
+        let (mut app, id) = app_mit_kette();
+        assert!(start_hoehe(&mut app, id, 1));
+        let t = app.ui.texteingabe.as_ref().expect("Feld offen");
+        assert_eq!(t.hoehe, Some(1));
+        assert_eq!(t.font, jjcad_core::model::TextFont::DinMittel);
+        app.ui.texteingabe.as_mut().unwrap().text = "+2,40".to_string();
+        uebernehmen_fuer_test(&mut app);
+        assert_eq!(hoehen(&app, id), vec!["", "+2,40"]);
+    }
+
+    #[test]
+    fn start_hoehe_zeigt_den_vorhandenen_text() {
+        let (mut app, id) = app_mit_kette();
+        app.session_mut()
+            .execute(
+                "dim.height.set",
+                &serde_json::json!({"ids": [id], "index": 0, "text": "+1,20"}),
+            )
+            .expect("setzen");
+        assert!(start_hoehe(&mut app, id, 0));
+        assert_eq!(app.ui.texteingabe.as_ref().unwrap().text, "+1,20");
+    }
+
+    #[test]
+    fn leerer_text_nimmt_die_angabe_zurueck() {
+        let (mut app, id) = app_mit_kette();
+        app.session_mut()
+            .execute(
+                "dim.height.set",
+                &serde_json::json!({"ids": [id], "index": 0, "text": "+1,20"}),
+            )
+            .expect("setzen");
+        assert!(start_hoehe(&mut app, id, 0));
+        app.ui.texteingabe.as_mut().unwrap().text.clear();
+        uebernehmen_fuer_test(&mut app);
+        assert_eq!(hoehen(&app, id), vec!["", ""]);
+    }
+
+    #[test]
+    fn start_hoehe_lehnt_fremde_objekte_ab() {
+        let (mut app, _) = app_mit_kette();
+        let linie = app
+            .session_mut()
+            .execute("draw.line", &serde_json::json!({"a": [0.0, 0.0], "b": [1000.0, 0.0]}))
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .unwrap();
+        assert!(!start_hoehe(&mut app, linie, 0));
+        assert!(app.ui.texteingabe.is_none());
     }
 }

@@ -1736,9 +1736,49 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 /// alte Text beim Doppelklick auf eine geladene Zeichnung im Hintergrund
 /// stehen (T0019, Turn 3).
 fn ohne_texteingabe(app: &App, dl: &mut DisplayList) {
-    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
-        dl.prims.retain(|p| p.entity != id);
+    let Some(t) = app.ui.texteingabe.as_ref() else {
+        return;
+    };
+    let Some(id) = t.id else {
+        return;
+    };
+    // Höhenangabe einer Maßkette (T0253): nur **diese eine Zeile** ausblenden.
+    // Das ganze Objekt zu entfernen nähme die Maßkette samt Maßzahlen aus dem
+    // Bild — übrig bliebe nur das Eingabefeld.
+    if let Some(index) = t.hoehe {
+        let Some(e) = app.doc().entity(id) else {
+            return;
+        };
+        let EntityKind::Dim {
+            pts,
+            line_pos,
+            angle,
+            ..
+        } = &e.kind
+        else {
+            return;
+        };
+        let skala = app.doc().plan_scale_of_layer(e.layer).max(0.01);
+        let style = &app.doc().dim_style;
+        let gap = style
+            .text_gap
+            .max(style.text_height * jjcad_core::render::DIM_TEXT_ABSTAND_H)
+            * skala;
+        let Some((_, anker, _, _)) = jjcad_core::render::dim_hoehe_lagen(
+            pts, *line_pos, *angle, gap,
+        )
+        .get(index)
+        .copied()
+        else {
+            return;
+        };
+        dl.prims.retain(|p| {
+            !(p.entity == id
+                && matches!(&p.shape, jjcad_core::render::Shape::Text(tp) if tp.pos.dist(anker) < 1e-6))
+        });
+        return;
     }
+    dl.prims.retain(|p| p.entity != id);
 }
 
 /// Die Maßkette, deren Messpunkte gerade gesetzt werden, steht als **Vorschau**
@@ -4307,11 +4347,9 @@ fn draw_tool_preview(
             draw_verschneiden_preview(app, p, rect, view, cursor);
         }
         "modify.fillet" | "modify.chamfer" => {
-            // Nach den beiden Linien zeigt der Zeiger den Radius bzw. das Maß:
+            // Sobald die Ecke steht, zeigt der Zeiger den Radius bzw. das Maß:
             // die fertige Ecke, nicht ein Platzhalter (T0247).
-            if let (Some(erstes), Some(zweites), Some(eckpunkt)) =
-                (tool.obj, tool.obj2, last)
-            {
+            if let (true, Some(eckpunkt)) = (ecke_bereit(&tool), last) {
                 let art = if tool.action == "modify.fillet" {
                     jjcad_core::ecke::EckeArt::Abrunden
                 } else {
@@ -4321,15 +4359,24 @@ fn draw_tool_preview(
                 p.circle_stroke(w2s(eckpunkt), 4.0, dashed);
                 if mass >= 1.0 {
                     let tol = (0.3 / view.zoom).max(1e-3);
-                    if let Ok(e) = jjcad_core::ecke::ecke(
-                        app.doc(),
-                        erstes,
-                        zweites,
-                        tool.pick_a,
-                        tool.pick_b,
-                        mass,
-                        art,
-                    ) {
+                    // Polylinien-Knick oder Linienpaar — dieselben Rechnungen
+                    // wie der Klick in `ecke_setzen`.
+                    let gerechnet = if let (Some(id), Some(knoten)) = (tool.obj, tool.knoten) {
+                        jjcad_core::ecke::ecke_polylinie(app.doc(), id, knoten, mass, art)
+                    } else if let (Some(a), Some(b)) = (tool.obj, tool.obj2) {
+                        jjcad_core::ecke::ecke(
+                            app.doc(),
+                            a,
+                            b,
+                            tool.pick_a,
+                            tool.pick_b,
+                            mass,
+                            art,
+                        )
+                    } else {
+                        Err(String::new())
+                    };
+                    if let Ok(e) = gerechnet {
                         for (q1, q2) in e.strecken(tol) {
                             p.line_segment([w2s(q1), w2s(q2)], stroke);
                         }
@@ -5299,7 +5346,7 @@ fn handle_input(
             // auf dem Eckpunkt, gibt es keine Richtung (T0236).
             let eckenwerkzeug = app.tool.clone().filter(|t| {
                 ist_eckenwerkzeug(&t.action)
-                    && t.obj2.is_some()
+                    && ecke_bereit(t)
                     && !typed.is_empty()
                     && !typed.contains(';')
             });
@@ -5320,6 +5367,7 @@ fn handle_input(
                                 cur.obj2 = None;
                                 cur.pick_a = None;
                                 cur.pick_b = None;
+                                cur.knoten = None;
                                 cur.pts.clear();
                             }
                         }
@@ -5412,6 +5460,11 @@ fn handle_input(
         && resp.double_clicked_by(egui::PointerButton::Primary)
     {
         if let Some(p) = raw.or(snapped) {
+            if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+                app.verwerfe_move_drag();
+                crate::textedit::start_hoehe(app, id, index);
+                return;
+            }
             if let Some(id) = crate::textedit::text_bei(app, p) {
                 app.verwerfe_move_drag();
                 crate::textedit::start_entitaet(app, id);
@@ -5574,8 +5627,15 @@ fn handle_input(
     }
 
     // Doppelklick auf einen Text: Inhalt direkt in der Zeichnung ändern.
+    // Eine Höhenangabe unter einer Maßkette ist ebenfalls ein Textfeld und
+    // wird genauso geöffnet (T0253).
     if app.tool.is_none() && resp.double_clicked_by(egui::PointerButton::Primary) {
-        if let Some(id) = crate::textedit::text_bei(app, raw.unwrap_or(w)) {
+        let p = raw.unwrap_or(w);
+        if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+            crate::textedit::start_hoehe(app, id, index);
+            return;
+        }
+        if let Some(id) = crate::textedit::text_bei(app, p) {
             crate::textedit::start_entitaet(app, id);
             return;
         }
@@ -7518,6 +7578,7 @@ fn restart_tool(app: &mut App, action: &str) {
         obj2: None,
         pick_a: None,
         pick_b: None,
+        knoten: None,
         selecting: false,
         phase: ToolPhase::Collecting,
     });
@@ -7555,35 +7616,54 @@ fn ist_eckenwerkzeug(action: &str) -> bool {
     matches!(action, "modify.fillet" | "modify.chamfer")
 }
 
-/// Setzt die Eckbearbeitung am gewählten Linienpaar. `mass_mm` ist der Radius
+/// Ist die Ecke des Werkzeugs schon bestimmt (Paar oder Polylinien-Knick)?
+fn ecke_bereit(tool: &Tool) -> bool {
+    tool.obj2.is_some() || tool.knoten.is_some()
+}
+
+/// Setzt die Eckbearbeitung an der gewählten Ecke. `mass_mm` ist der Radius
 /// (Abrunden) bzw. das Maß (Phase) in Millimetern.
 ///
 /// Der eine Weg für Klick und Tippeingabe: die getippte Zahl darf direkt das
 /// Maß sein, damit der Radius auch dann ankommt, wenn der Zeiger noch genau
 /// auf dem Eckpunkt steht (dort gibt es keine Richtung, T0236).
 fn ecke_setzen(app: &mut App, tool: &Tool, mass_mm: f64) -> bool {
-    let (Some(a), Some(b), Some(eckpunkt)) = (tool.obj, tool.obj2, tool.pts.first().copied())
-    else {
+    let Some(eckpunkt) = tool.pts.first().copied() else {
         return false;
     };
     let unit = app.unit();
     let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
-    let pick_a = tool.pick_a.unwrap_or(eckpunkt);
-    let pick_b = tool.pick_b.unwrap_or(eckpunkt);
     let schluessel = if tool.action == "modify.fillet" {
         "radius"
     } else {
         "distance"
     };
-    let mut params = json!({
-        "ids": [a, b],
-        "mass": unit.from_mm(mass_mm),
-        "picks": [ax(pick_a), ax(pick_b)],
-    });
+    // Knick einer Polylinie: **ein** Objekt und der Scheitelpunkt.
+    let (params, ids) = if let (Some(id), Some(knoten)) = (tool.obj, tool.knoten) {
+        (
+            json!({"ids": [id], "vertex": knoten, "mass": unit.from_mm(mass_mm)}),
+            vec![id],
+        )
+    } else {
+        let (Some(a), Some(b)) = (tool.obj, tool.obj2) else {
+            return false;
+        };
+        let pick_a = tool.pick_a.unwrap_or(eckpunkt);
+        let pick_b = tool.pick_b.unwrap_or(eckpunkt);
+        (
+            json!({
+                "ids": [a, b],
+                "mass": unit.from_mm(mass_mm),
+                "picks": [ax(pick_a), ax(pick_b)],
+            }),
+            vec![a, b],
+        )
+    };
+    let mut params = params;
     params[schluessel] = json!(unit.from_mm(mass_mm));
     let ok = run(app, &tool.action, params);
     if ok {
-        app.session_mut().select(vec![a, b]);
+        app.session_mut().select(ids);
     }
     ok
 }
@@ -7702,9 +7782,18 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
-    // Abrunden und Phase (T0247): solange das Paar noch nicht steht, tritt die
-    // Linie unter dem Zeiger hervor — sonst ist nicht zu sehen, welche gemeint ist.
-    if ist_eckenwerkzeug(&tool.action) && tool.obj2.is_none() {
+    // Höhenangabe (T0253): die Kette unter dem Zeiger tritt hervor, damit vor
+    // dem Klick klar ist, wozu die Angabe gehören wird.
+    if tool.action == "dim.height" {
+        return dim_kette_unter_zeiger(app, w, tol);
+    }
+    // Abrunden und Phase (T0247): solange die Ecke noch nicht steht, tritt das
+    // hervor, was der Klick wählen würde — der Knick einer Polylinie oder eine
+    // Linie. Sonst ist nicht zu sehen, worauf die Abrundung sich bezieht.
+    if ist_eckenwerkzeug(&tool.action) && !ecke_bereit(tool) {
+        if let Some((id, _, _)) = jjcad_core::ecke::polylinien_knoten(app.doc(), w, tol) {
+            return Some(id);
+        }
         return snap::hit_test(app.doc(), w, tol, None).filter(|id| {
             matches!(
                 app.doc().entity(*id).map(|e| &e.kind),
@@ -7803,6 +7892,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         obj2: None,
                         pick_a: None,
                         pick_b: None,
+                        knoten: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -7842,6 +7932,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         obj2: None,
                         pick_a: None,
                         pick_b: None,
+                        knoten: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -8388,6 +8479,33 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
             }
         }
+        // Höhenangabe unter einer Maßkette (T0253): **ein** Klick auf die
+        // Kette, danach steht das Textfeld unter dem getroffenen Abschnitt
+        // (Esc/Enter übernimmt). Ein Doppelklick auf eine vorhandene Angabe
+        // öffnet sie ohne dieses Werkzeug.
+        "dim.height" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            match dim_kette_unter_zeiger(app, w, tol) {
+                Some(id) => {
+                    // Auf eine vorhandene Angabe geklickt: genau die ändern.
+                    let idx = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), raw)
+                        .filter(|(h, _)| *h == id)
+                        .and_then(|(_, i)| Some(i))
+                        .or_else(|| {
+                            app.doc()
+                                .entity(id)
+                                .and_then(|e| jjcad_core::render::dim_abschnitt_bei(&e.kind, raw))
+                        });
+                    match idx {
+                        Some(index) => {
+                            crate::textedit::start_hoehe(app, id, index);
+                        }
+                        None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
+                    }
+                }
+                None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
+            }
+        }
         "dim.elevation.plan" => {
             let z = app.options.elevation_z;
             let text_pos = app.options.elevation_text_pos.key();
@@ -8663,23 +8781,56 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                 }
             }
         }
-        // Abrunden und Phase (T0247): zwei Linien anklicken, dann das Maß am
-        // Zeiger (Klick) oder getippt (Enter, siehe `handle_input`).
+        // Abrunden und Phase (T0247): die Ecke wählen, dann das Maß am Zeiger
+        // (Klick) oder getippt (Enter, siehe `handle_input`).
+        //
+        // Die Ecke ist **ein** Klick, wenn der Zeiger sie schon trifft: der
+        // Schnittpunkt zweier Linien oder der Knick einer Polylinie. Nur wenn
+        // dort keine Ecke liegt, wählt der erste Klick eine einzelne Linie und
+        // der zweite die Partnerlinie.
         "modify.fillet" | "modify.chamfer" => {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
-            // 1. und 2. Klick: die beiden Linien.
-            if tool.obj.is_none() || tool.obj2.is_none() {
-                let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
+            if !ecke_bereit(&tool) {
+                // 1) Knick einer Polylinie — ein Klick auf den Scheitelpunkt.
+                if let Some((id, knoten, punkt)) =
+                    jjcad_core::ecke::polylinien_knoten(app.doc(), w, tol)
+                {
+                    tool.obj = Some(id);
+                    tool.obj2 = None;
+                    tool.knoten = Some(knoten);
+                    tool.pick_a = None;
+                    tool.pick_b = None;
+                    tool.pts = vec![punkt];
+                    app.session_mut().select(vec![id]);
+                    app.tool = Some(tool);
+                    return;
+                }
+                // 2) Schnittpunkt zweier Linien — beide liegen dort im Fang.
+                let linien = jjcad_core::ecke::linien_durch(app.doc(), w, tol);
+                if linien.len() >= 2 {
+                    let (a, b) = (linien[0], linien[1]);
+                    match jjcad_core::ecke::schnittpunkt(app.doc(), a, b) {
+                        Ok(eckpunkt) => {
+                            tool.obj = Some(a);
+                            tool.obj2 = Some(b);
+                            tool.pick_a = Some(w);
+                            tool.pick_b = Some(w);
+                            tool.knoten = None;
+                            tool.pts = vec![eckpunkt];
+                            app.session_mut().select(vec![a, b]);
+                            app.tool = Some(tool);
+                        }
+                        Err(_) => {
+                            app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_kein_schnitt"))
+                        }
+                    }
+                    return;
+                }
+                // 3) Eine einzelne Linie: erster Klick des Paares.
+                let Some(id) = linien.first().copied() else {
                     app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
                     return;
                 };
-                if !matches!(
-                    app.doc().entity(id).map(|e| &e.kind),
-                    Some(EntityKind::Line { .. })
-                ) {
-                    app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
-                    return;
-                }
                 match tool.obj {
                     None => {
                         tool.obj = Some(id);
@@ -8695,6 +8846,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                             Ok(eckpunkt) => {
                                 tool.obj2 = Some(id);
                                 tool.pick_b = Some(w);
+                                tool.knoten = None;
                                 tool.pts = vec![eckpunkt];
                                 app.session_mut().select(vec![erstes, id]);
                                 app.tool = Some(tool);
@@ -8723,6 +8875,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     t.obj2 = None;
                     t.pick_a = None;
                     t.pick_b = None;
+                    t.knoten = None;
                     t.pts.clear();
                 }
             }
@@ -19424,6 +19577,98 @@ mod tests_ecke {
         assert_eq!(app.doc().entities.len(), vorher, "nichts entstanden");
     }
 
+    /// Ein **Klick auf den Schnittpunkt** wählt beide Linien — so will der
+    /// Nutzer die Ecke ansprechen, ohne zwei Klicks zu setzen.
+    #[test]
+    fn klick_auf_den_schnittpunkt_waehlt_beide_linien() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+        // Der Schnittpunkt (0,0) liegt hier am Anfang beider Linien.
+        tool_click(&mut app, V2::new(0.0, 0.0));
+        let t = app.tool.as_ref().expect("Werkzeug läuft");
+        assert_eq!(t.obj, Some(waagerecht), "erste Linie aus dem Schnittpunkt");
+        assert_eq!(t.obj2, Some(senkrecht), "zweite Linie aus dem Schnittpunkt");
+        assert!(
+            t.pts.first().map(|p| nahe(*p, 0.0, 0.0)).unwrap_or(false),
+            "Eckpunkt ist der Schnittpunkt"
+        );
+    }
+
+    /// Auch ein Kreuz mitten in den Linien ist in einem Klick gewählt.
+    #[test]
+    fn klick_auf_ein_kreuz_waehlt_beide_linien() {
+        let (mut app, _a, _b) = app_mit_ecke();
+        // Zwei Linien, die sich mitten im Zug kreuzen.
+        run(&mut app, "draw.line", json!({"a": [500.0, 500.0], "b": [1500.0, 500.0]}));
+        let eins = *app.session().last_created.first().unwrap();
+        run(&mut app, "draw.line", json!({"a": [1000.0, 100.0], "b": [1000.0, 900.0]}));
+        let zwei = *app.session().last_created.first().unwrap();
+        app.start_tool("modify.chamfer");
+        tool_click(&mut app, V2::new(1000.0, 500.0));
+        let t = app.tool.as_ref().unwrap();
+        assert_eq!((t.obj, t.obj2), (Some(eins), Some(zwei)));
+        assert!(t.pts.first().map(|p| nahe(*p, 1000.0, 500.0)).unwrap_or(false));
+    }
+
+    /// Der Knick einer Polylinie ist **ein** Klick — danach kommt nur das Maß.
+    #[test]
+    fn klick_auf_den_knick_waehlt_die_polylinie() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.polyline",
+            json!({"pts": [[0.0, 0.0], [1000.0, 0.0], [1000.0, 1000.0]], "closed": false}),
+        );
+        let pl = *app.session().last_created.first().unwrap();
+        app.start_tool("modify.fillet");
+
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let t = app.tool.as_ref().expect("Werkzeug läuft");
+        assert_eq!(t.obj, Some(pl));
+        assert_eq!(t.knoten, Some(1), "der Scheitelpunkt ist gewählt");
+        assert!(t.obj2.is_none(), "eine Polylinie braucht kein zweites Objekt");
+
+        // Dritter Klick: 200 mm vom Knick entfernt = Radius 200.
+        tool_click(&mut app, V2::new(1200.0, 0.0));
+        let werte: Vec<(V2, f64)> = match &app.doc().entity(pl).unwrap().kind {
+            EntityKind::Polyline { verts, .. } => {
+                verts.iter().map(|v| (v.p, v.bulge)).collect()
+            }
+            other => panic!("keine Polylinie mehr: {other:?}"),
+        };
+        assert_eq!(werte.len(), 4, "Scheitelpunkt wurde zu zwei Punkten");
+        assert!(nahe(werte[1].0, 800.0, 0.0), "{:?}", werte[1].0);
+        assert!(nahe(werte[2].0, 1000.0, 200.0), "{:?}", werte[2].0);
+        assert!(werte[1].1 > 0.3, "Bogen im Knick: {}", werte[1].1);
+        // Werkzeug ist für den nächsten Knick bereit.
+        let t = app.tool.as_ref().unwrap();
+        assert!(t.obj.is_none() && t.knoten.is_none() && t.pts.is_empty());
+    }
+
+    /// Getipptes Maß am Polylinien-Knick geht denselben Weg.
+    #[test]
+    fn getipptes_mass_am_knick() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.polyline",
+            json!({"pts": [[0.0, 0.0], [1000.0, 0.0], [1000.0, 1000.0]], "closed": false}),
+        );
+        let pl = *app.session().last_created.first().unwrap();
+        app.start_tool("modify.chamfer");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let t = app.tool.clone().unwrap();
+        assert!(ecke_setzen(&mut app, &t, 150.0), "Maß gesetzt");
+        let verts = match &app.doc().entity(pl).unwrap().kind {
+            EntityKind::Polyline { verts, .. } => verts.clone(),
+            other => panic!("keine Polylinie: {other:?}"),
+        };
+        assert!(nahe(verts[1].p, 850.0, 0.0));
+        assert!(nahe(verts[2].p, 1000.0, 150.0));
+    }
+
     /// Die Aufforderung im Chat folgt den drei Schritten.
     #[test]
     fn aufforderung_folgt_den_drei_schritten() {
@@ -20838,5 +21083,89 @@ mod tests_laengenvorschau {
             (ende.x - erwartet.x).abs() < 1.5 && (ende.y - erwartet.y).abs() < 1.5,
             "die Vorschau endet bei {ende:?}, erwartet {erwartet:?} (800 mm)"
         );
+    }
+}
+
+mod tests_hoehenangabe {
+    //! T0253: Das Werkzeug „Höhenangabe“ öffnet unter dem angeklickten
+    //! Abschnitt ein Textfeld; geschrieben wird über `dim.height.set`.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    fn kette(app: &mut App) -> u64 {
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        antwort["created"][0].as_u64().expect("Kennung")
+    }
+
+    #[test]
+    fn werkzeug_oeffnet_das_feld_unter_dem_abschnitt() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.start_tool("dim.height");
+        // Klick auf die Maßlinie im zweiten Abschnitt (2000 … 5000).
+        tool_click(&mut app, V2::new(4000.0, -500.0));
+        let t = app
+            .ui
+            .texteingabe
+            .as_ref()
+            .expect("das Textfeld muss offen sein");
+        assert_eq!(t.id, Some(id), "das Feld gehört zur Maßkette");
+        assert_eq!(t.hoehe, Some(1), "der zweite Abschnitt ist gewählt");
+        assert!(t.pos.y < -500.0, "das Feld steht unter der Maßlinie");
+        assert!(t.text.is_empty(), "eine neue Angabe beginnt leer");
+    }
+
+    #[test]
+    fn das_offene_feld_nimmt_nur_die_hoehenangabe_aus_dem_bild() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.session_mut()
+            .execute(
+                "dim.height.set",
+                &json!({"ids": [id], "index": 1, "text": "+2,40"}),
+            )
+            .expect("setzen");
+        assert!(crate::textedit::start_hoehe(&mut app, id, 1));
+        let dl = display_list(&mut app);
+        let eigene: Vec<_> = dl.prims.iter().filter(|p| p.entity == id).collect();
+        assert!(
+            eigene
+                .iter()
+                .any(|p| matches!(&p.shape, jjcad_core::render::Shape::Line(..))),
+            "die Maßkette muss sichtbar bleiben"
+        );
+        let texte = eigene
+            .iter()
+            .filter(|p| matches!(&p.shape, jjcad_core::render::Shape::Text(_)))
+            .count();
+        assert_eq!(texte, 2, "die beiden Maßzahlen bleiben stehen");
+        assert!(
+            !eigene.iter().any(|p| matches!(&p.shape,
+                jjcad_core::render::Shape::Text(t) if t.text == "+2,40")),
+            "die bearbeitete Angabe ist ausgeblendet"
+        );
+    }
+
+    #[test]
+    fn ohne_masskette_bleibt_das_werkzeug_offen() {
+        let mut app = app();
+        app.start_tool("dim.height");
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        assert!(app.ui.texteingabe.is_none(), "nirgends eine Maßkette");
+        assert_eq!(app.tool_id(), Some("dim.height"), "das Werkzeug läuft weiter");
     }
 }

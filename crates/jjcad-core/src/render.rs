@@ -1059,6 +1059,7 @@ pub fn preview_dim(
             override_text: None,
             ext_lines,
             symbol: symbol.to_string(),
+            heights: Vec::new(),
         },
     );
     // Wie die Action: ohne ausdrückliche Farbe ist neue Bemaßung schwarz.
@@ -1672,6 +1673,7 @@ pub fn render_entity(
             override_text,
             ext_lines,
             symbol,
+            heights,
         } => {
             render_dim_chain(
                 ctx,
@@ -1683,6 +1685,7 @@ pub fn render_entity(
                 override_text.as_deref(),
                 *ext_lines,
                 symbol,
+                heights,
                 xf,
                 dl,
             );
@@ -4728,6 +4731,137 @@ pub fn dim_line_move(kind: &mut EntityKind, ziel: Vec2) -> bool {
     dim_offset_set(kind, (ziel - pts[0]).dot(vers))
 }
 
+/// Lage der Höhenangaben einer Maßkette (T0253): je Abschnitt Anker,
+/// Textwinkel und senkrechte Ausrichtung.
+///
+/// Die Maßzahl steht **über** der Maßlinie (`mid + n · text_gap`, `valign
+/// Bottom`); die Höhenangabe steht **unter** ihr (`mid − n · text_gap`). Der
+/// Textwinkel folgt der Maßzahl — beide werden also gleich gelesen. Dreht die
+/// Kette über 90°, kippt der Winkel um π (lesbar von links); dann muss auch die
+/// senkrechte Ausrichtung kippen, damit die Angabe auf der Unterseite bleibt.
+///
+/// Eine Quelle für Anzeige (`render_dim_chain`), Doppelklick
+/// ([`dim_hoehe_unter_punkt`]) und den Editor in der Zeichenfläche.
+pub fn dim_hoehe_lagen(
+    pts: &[Vec2],
+    line_pos: Vec2,
+    angle: f64,
+    text_gap: f64,
+) -> Vec<(usize, Vec2, f64, TextAlignV)> {
+    if pts.len() < 2 {
+        return Vec::new();
+    }
+    let (dir, n) = dim_achse(angle);
+    let projected = dim_projiziert(pts, line_pos, angle);
+    let mut ta = dir.angle();
+    let mut gespiegelt = false;
+    if ta > std::f64::consts::FRAC_PI_2 + 0.01 || ta < -std::f64::consts::FRAC_PI_2 - 0.01 {
+        ta += std::f64::consts::PI;
+        gespiegelt = true;
+    }
+    let valign = if gespiegelt {
+        TextAlignV::Bottom
+    } else {
+        TextAlignV::Top
+    };
+    projected
+        .windows(2)
+        .enumerate()
+        .map(|(i, w)| (i, (w[0] + w[1]) * 0.5 - n * text_gap, ta, valign))
+        .collect()
+}
+
+/// Höhenangabe unter einer Maßkette, die `w` trifft: (Ketten-Id, Abschnitt).
+///
+/// Getroffen wird der **Textkasten** der Angabe (dieselbe Fläche, die der
+/// Doppelklick öffnet), nicht die ganze Maßkette — sonst ließe sich unter der
+/// Kette nicht mehr zeichnen. Die Lage kommt aus [`dim_hoehe_lagen`], die Größe
+/// aus dem Bemaßungsstil und dem Maßstab des Plans.
+pub fn dim_hoehe_unter_punkt(doc: &Document, w: Vec2) -> Option<(Id, usize)> {
+    let style = &doc.dim_style;
+    for e in doc.ents().iter().rev() {
+        let EntityKind::Dim {
+            pts,
+            line_pos,
+            angle,
+            heights,
+            ..
+        } = &e.kind
+        else {
+            continue;
+        };
+        if pts.len() < 2 || heights.is_empty() {
+            continue;
+        }
+        let skala = doc.plan_scale_of_layer(e.layer).max(0.01);
+        let text_h = style.text_height * skala;
+        let gap = style.text_gap.max(style.text_height * DIM_TEXT_ABSTAND_H) * skala;
+        for (i, pos, ta, valign) in dim_hoehe_lagen(pts, *line_pos, *angle, gap) {
+            let Some(txt) = heights
+                .get(i)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            else {
+                continue;
+            };
+            let prim = TextPrim {
+                pos,
+                text: doc.resolve_text(txt),
+                height: text_h,
+                angle: ta,
+                align: TextAlignH::Center,
+                valign,
+                bold: false,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: Vec::new(),
+                font: TextFont::DinMittel,
+                line_spacing: 1.0,
+            };
+            let ecken = text_corners(&prim);
+            if point_in_polygon(w, &ecken) {
+                return Some((e.id, i));
+            }
+        }
+    }
+    None
+}
+
+/// Abschnitt einer Maßkette unter dem Punkt: der Abschnitt, dessen Spanne
+/// entlang der Messrichtung dem Punkt am nächsten liegt.
+///
+/// Für das Werkzeug „Höhenangabe“ (T0253): der Klick darf über oder unter der
+/// Maßlinie liegen, entscheidend ist die Lage längs der Kette. Liefert `None`,
+/// wenn das Objekt keine Maßkette ist.
+pub fn dim_abschnitt_bei(kind: &EntityKind, w: Vec2) -> Option<usize> {
+    let EntityKind::Dim { pts, angle, .. } = kind else {
+        return None;
+    };
+    if pts.len() < 2 {
+        return None;
+    }
+    let (dir, _) = dim_achse(*angle);
+    let t = w.dot(dir);
+    let mut best: Option<(usize, f64)> = None;
+    for (i, s) in pts.windows(2).enumerate() {
+        let a = s[0].dot(dir);
+        let b = s[1].dot(dir);
+        let (lo, hi) = (a.min(b), b.max(a));
+        let d = if t < lo {
+            lo - t
+        } else if t > hi {
+            t - hi
+        } else {
+            0.0
+        };
+        if best.map(|(_, bd)| d < bd).unwrap_or(true) {
+            best = Some((i, d));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
 /// Zeichnet eine Bemaßung (Kette aus mindestens zwei Messpunkten).
 ///
 /// `override_text` ersetzt die gerechnete Maßzahl des **ersten** Segments —
@@ -4746,6 +4880,8 @@ fn render_dim_chain(
     ext_lines: bool,
     // Punktsymbol auf der Maßlinie (T0227), leer = keins.
     symbol: &str,
+    // Höhenangaben unter den Abschnitten (T0253), Index = Abschnitt.
+    heights: &[String],
     xf: Affine,
     dl: &mut DisplayList,
 ) {
@@ -4918,6 +5054,39 @@ fn render_dim_chain(
                 superscript: false,
                 runs,
                 // Bauzeichnungsschrift nach DIN 1356-1, §8.4 (DIN 1451)
+                font: TextFont::DinMittel,
+                line_spacing: 1.0,
+            }),
+            style: *st,
+            entity: e.id,
+            layer: e.layer,
+        });
+    }
+    // Höhenangaben **unter** den Abschnitten (T0253): einfache Textfelder in
+    // der Schrift und Größe der Maßzahl, auf der der Maßzahl abgewandten
+    // Seite der Maßlinie.
+    for (i, pos, ta_h, valign_h) in dim_hoehe_lagen(pts, line_pos, angle, text_gap) {
+        let Some(h) = heights.get(i).map(|s| s.trim()).filter(|s| !s.is_empty()) else {
+            continue;
+        };
+        let txt = if ctx.resolve_text {
+            ctx.doc.resolve_text(h)
+        } else {
+            h.to_string()
+        };
+        dl.push(Prim {
+            shape: Shape::Text(TextPrim {
+                pos: xf.apply(pos),
+                text: txt.clone(),
+                height: text_h * xf.scale_factor(),
+                angle: ta_h + xf.rotation(),
+                align: TextAlignH::Center,
+                valign: valign_h,
+                bold: false,
+                italic: false,
+                underline: false,
+                superscript: false,
+                runs: vec![TextRun::plain(txt)],
                 font: TextFont::DinMittel,
                 line_spacing: 1.0,
             }),
