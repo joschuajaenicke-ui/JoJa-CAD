@@ -14,7 +14,7 @@
 
 use jjcad_core::actions;
 use jjcad_core::model::Document;
-use jjcad_core::style::LAYER_DEFAULTS;
+use jjcad_core::style::{Color, LAYER_DEFAULTS, LAYER_FARBE};
 use serde_json::{json, Value};
 
 /// Führt eine Aktion aus und liefert die Id des erzeugten Objekts.
@@ -230,4 +230,59 @@ fn treppenbeschriftung_liegt_auf_architektur() {
     );
     let label = neu(&mut d, "draw.stair.label", json!({"id": treppe}));
     assert_eq!(ebene(&d, label), "Architektur");
+}
+
+/// T0249: Die Layer einer neuen Datei sind **schwarz** — alle vier.
+///
+/// Vorher trug „Beschriftung“ Rot und „Blöcke“ Grau: jede Maßzahl, jeder Text
+/// und jede Blockinstanz stand damit in einer neuen Datei farbig, obwohl der
+/// Plan in Schwarz gezeichnet wird. Geprüft wird der Weg, den der Nutzer
+/// nimmt (neues Dokument, neuer Plan) **und** die gespeicherte Datei — dort
+/// steht der Farbwert als Hex, also der Wert, den der nächste Start liest.
+#[test]
+fn layer_einer_neuen_datei_sind_schwarz() {
+    let schwarz = "#1C1F24";
+    assert_eq!(LAYER_FARBE, Color::BLACK, "Schwarz des Programms");
+    assert_eq!(LAYER_FARBE.to_hex(), schwarz);
+
+    let mut d = Document::new();
+    for l in &d.layers {
+        assert_eq!(l.color, LAYER_FARBE, "Layer „{}“ ist nicht schwarz", l.name);
+    }
+
+    // Jeder Plan bekommt dieselben vier Layer in derselben Farbe.
+    actions::execute(&mut d, "plan.create", &json!({"name": "Plan 2"}))
+        .expect("Plan anlegen");
+    let plaene: Vec<u64> = {
+        let mut v: Vec<u64> = d.plans.iter().map(|p| p.id).collect();
+        v.sort_unstable();
+        v
+    };
+    assert_eq!(plaene.len(), 2, "zwei Pläne");
+    for plan in plaene {
+        let namen: Vec<&str> = d
+            .layers
+            .iter()
+            .filter(|l| l.plan == plan)
+            .map(|l| l.name.as_str())
+            .collect();
+        assert_eq!(namen.len(), LAYER_DEFAULTS.len(), "vier Layer je Plan");
+        for l in d.layers.iter().filter(|l| l.plan == plan) {
+            assert_eq!(l.color, LAYER_FARBE, "Layer „{}“ ist nicht schwarz", l.name);
+        }
+    }
+
+    // Und so steht es in der Datei.
+    let text = jjcad_core::persist::to_json(&d).expect("Zeichnung schreiben");
+    let wert: Value = serde_json::from_str(&text).expect("JSON lesen");
+    let farben: Vec<&str> = wert["layers"]
+        .as_array()
+        .expect("layers")
+        .iter()
+        .map(|l| l["color"].as_str().expect("color"))
+        .collect();
+    assert!(
+        farben.iter().all(|f| *f == schwarz),
+        "alle Layerfarben schwarz, gefunden: {farben:?}"
+    );
 }

@@ -279,6 +279,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   war die Ursache, dass neue Texte auf „Zeichnung“ landeten (T0202, Turn 3).
   Prüfweg: `cargo test -p jjcad-core --test plaene` und
   `cargo test -p jjcad-gui tests_plaene`.
+- **Standardlayer sind schwarz (T0249)**: Die vier Layer eines Plans tragen als Vorgabe
+  **eine** Farbe, `style::LAYER_FARBE` (= `Color::BLACK`, `#1C1F24`). Vorher stand
+  „Beschriftung“ in Rot und „Blöcke“ in Grau: eine neue Datei zeigte alle Texte,
+  Raumstempel und Blockinstanzen farbig, obwohl der Plan schwarz gezeichnet wird.
+  Geändert ist nur die **Vorgabe** — eine vorhandene Zeichnung bringt ihre Layerfarben
+  in der Datei mit und behält sie (so auch die `samples/`). Wer die Vorgabe prüft,
+  nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
+  `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
+  und `cargo test -p jjcad-core --test massketten_farbe`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
