@@ -445,6 +445,9 @@ fn ebene_dropdown(
         let mut out = None;
         ui.add_space(2.0);
         ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.layer"), 11.0));
+        // T0245: Luft unter der Überschrift — die Auswahlfläche der Zeile
+        // darunter reichte sonst bis an den Text und verdeckte ihn.
+        ui.add_space(4.0);
         for name in namen {
             let sel = aktueller_name
                 .map(|a| a.eq_ignore_ascii_case(name))
@@ -457,6 +460,8 @@ fn ebene_dropdown(
         widgets::hline(ui);
         ui.add_space(4.0);
         ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.plan"), 11.0));
+        // T0245: derselbe Abstand unter „Plan“.
+        ui.add_space(4.0);
         for (pid, pname) in plaene {
             let sel = aktuelle_plaene.contains(pid);
             if ui.selectable_label(sel, pname).clicked() {
@@ -7446,6 +7451,58 @@ mod tests_layer_plan {
         // Abschnittsüberschriften „Layer“ und „Plan“ — „Plan 1“ gibt es nicht.
         assert!(alle.iter().any(|t| t.trim() == "Layer"), "Abschnitt Layer fehlt");
         assert!(alle.iter().any(|t| t.trim() == "Plan"), "Abschnitt Plan fehlt");
+    }
+
+    /// Unter den Überschriften „Layer“ und „Plan“ steht Luft: die
+    /// Auswahlfläche der ersten Zeile darunter reichte sonst bis an den Text
+    /// und verdeckte ihn, sobald die Zeile gewählt war.
+    #[test]
+    fn ueberschriften_haben_abstand_zur_ersten_zeile() {
+        let (mut app, linie, text, _plan2) = app_mit_linie_und_text();
+        app.session_mut().select(vec![linie, text]);
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Plan 1 · *variiert*");
+        klick(&mut app, feld.center(), 2.0);
+        let out = bild(&mut app, Vec::new(), 3.0);
+
+        let alle = texte(&out);
+        // „Layer“ steht auch als Zeilenname links am Feld — die Überschrift im
+        // Menü ist die untere der beiden.
+        let kopf_layer = alle
+            .iter()
+            .filter(|(t, _)| t.trim() == "Layer")
+            .map(|(_, r)| *r)
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("Überschrift Layer");
+        let erste_zeile = alle
+            .iter()
+            .filter(|(t, _)| t.trim() == "Zeichnung")
+            .map(|(_, r)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("Layer Zeichnung im Menü");
+        let kopf_plan = alle
+            .iter()
+            .find(|(t, _)| t.trim() == "Plan")
+            .map(|(_, r)| *r)
+            .expect("Überschrift Plan");
+        let erster_plan = alle
+            .iter()
+            .find(|(t, _)| t.trim() == "Plan 1")
+            .map(|(_, r)| *r)
+            .expect("Plan 1 im Menü");
+
+        let luecke_layer = erste_zeile.top() - kopf_layer.bottom();
+        let luecke_plan = erster_plan.top() - kopf_plan.bottom();
+        // Ohne den Abstand sind es 6 px (gemessen) — die Auswahlfläche der
+        // Zeile reicht darüber hinaus und deckte den Text zu. Mit sind es 10.
+        assert!(
+            luecke_layer >= 8.0,
+            "zu wenig Luft unter „Layer“: {luecke_layer:.1} px"
+        );
+        assert!(
+            luecke_plan >= 8.0,
+            "zu wenig Luft unter „Plan“: {luecke_plan:.1} px"
+        );
     }
 
     /// Abnahmefall aus dem Ticket: Klick auf „Plan 2“ verschiebt beide
