@@ -15,6 +15,7 @@ angefasst wurde.
 - Wird ein Reiter mit „Verwerfen“ geschlossen, bleibt der letzte Arbeitsstand als verworfener Stand im Sicherungsordner liegen; die Einstellungsseite zeigt die Zahl der verworfenen Stände an, zurückgeholt wird nichts.
 
 ### Geändert
+- Das mitgelieferte Beispiel `samples/Wohnhaus.jjcad` ist eine neu gezeichnete Wohnhaus-Datei mit Erd- und Obergeschoss; das Bild im README zeigt diese Zeichnung.
 - Die Sicherung bewahrt Stände nach dem Verfahren Geometric Retention auf: mit festem Platzvorrat, gleichbleibender Auflösung über die Nutzungsdauer und einem Alter in Zyklen statt in Kalenderzeit.
 - Neue Vorgaben sind 150 Plätze, eine Reichweite von einer Woche und ein Intervall von einer Minute; der Aufbewahrungszeitraum ist als Tag, Woche, Monat oder Quartal wählbar, die Wahl „Jahr“ entfällt.
 - Der neueste Stand einer Zeichnung bleibt bis zum Ende des Aufbewahrungszeitraums erhalten und verfällt danach mit dem Verlauf; der älteste Stand rückt nach, sobald der Verlauf tief genug ist.

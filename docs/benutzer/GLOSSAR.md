@@ -159,7 +159,7 @@ Beispiel:
 ```
 Bereich:  Füllflächen
 Symptom:  Nach dem Farbeimer bleibt zwischen Wand und Fläche ein weißer Spalt (~2 mm)
-Repro:    samples/Wohnhaus.jjcad öffnen → C → in den Flur klicken
+Repro:    samples/Wohnhaus.jjcad öffnen → C → in die Diele klicken
 Soll:     Flächenrand deckungsgleich mit der Wandkante, Spalt < 0,5 mm
 ```
 

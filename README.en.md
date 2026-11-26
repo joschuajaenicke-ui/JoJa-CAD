@@ -7,7 +7,7 @@ for Linux, Windows and macOS.
 
 ![JoJa-CAD interface](samples/ui.png)
 
-*Example drawing from the repository — a placeholder, not professionally reviewed.*
+*Example drawing from the repository: a house, ground floor.*
 
 ## The idea
 
