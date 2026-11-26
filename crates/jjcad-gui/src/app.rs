@@ -560,6 +560,10 @@ pub struct Tool {
     /// welche Seite der Linie stehen bleibt. Ohne sie gilt die längere Seite.
     pub pick_a: Option<V2>,
     pub pick_b: Option<V2>,
+    /// Knick einer Polylinie (T0247): der Index des Scheitelpunkts in `obj`.
+    /// Ein Klick auf den Knick wählt die Ecke in **einem** Schritt; `pts` trägt
+    /// dann den Scheitelpunkt als Eckpunkt.
+    pub knoten: Option<usize>,
     pub selecting: bool,
     pub phase: ToolPhase,
 }
@@ -3997,6 +4001,39 @@ impl App {
                     self.ui.props_open = true;
                     self.fit_view();
                 }
+                // Knick einer Polylinie (T0247): die Ecke ist mit dem
+                // Scheitelpunkt schon gewählt, es fehlt nur das Maß.
+                "knick" | "abrundenknick" | "phaseknick" => {
+                    let u = self.unit().mm();
+                    let antwort = self.session_mut().execute(
+                        "draw.polyline",
+                        &serde_json::json!({
+                            "pts": [[500.0 / u, 500.0 / u], [4500.0 / u, 500.0 / u],
+                                    [4500.0 / u, 4500.0 / u]],
+                            "closed": false
+                        }),
+                    );
+                    let werkzeug = if part.trim() == "phaseknick" {
+                        "modify.chamfer"
+                    } else {
+                        "modify.fillet"
+                    };
+                    self.ui.ribbon = RibbonTab::Aendern;
+                    self.start_tool(werkzeug);
+                    if let Ok(r) = antwort {
+                        if let Some(id) = r["created"][0].as_u64() {
+                            if let Some(t) = self.tool.as_mut() {
+                                t.obj = Some(id);
+                                t.knoten = Some(1);
+                                t.pts = vec![jjcad_core::geom::Vec2::new(4500.0, 500.0)];
+                            }
+                            self.session_mut().select(vec![id]);
+                        }
+                    }
+                    self.ui.blatt_open = false;
+                    self.ui.props_open = true;
+                    self.fit_view();
+                }
                 // Pfad-Werkzeug (T0229): zeigt den Werkzeugzustand und wählt
                 // den Pfad, damit Vorschau und Panel im Bild stehen.
                 "pfad" | "path" => {
@@ -5952,6 +5989,7 @@ impl App {
             obj2: None,
             pick_a: None,
             pick_b: None,
+            knoten: None,
             selecting: self.session().selection.is_empty()
                 && matches!(
                     id,
@@ -11342,7 +11380,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
         }
         // Abrunden und Phase (T0247): erst die zwei Linien, dann das Maß.
         "modify.fillet" => {
-            if tool.obj2.is_some() {
+            // Auch der Knick einer Polylinie ist eine fertige Ecke (T0247).
+            if tool.obj2.is_some() || tool.knoten.is_some() {
                 jjcad_core::i18n::tr("gui.app.abrunden_radius_klicken")
             } else if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.abrunden_zweite_linie_anklicken")
@@ -11351,7 +11390,7 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         "modify.chamfer" => {
-            if tool.obj2.is_some() {
+            if tool.obj2.is_some() || tool.knoten.is_some() {
                 jjcad_core::i18n::tr("gui.app.phase_mass_klicken")
             } else if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.phase_zweite_linie_anklicken")
@@ -15237,6 +15276,7 @@ mod tests_chat_texte {
                             obj2: None,
                             pick_a: None,
                             pick_b: None,
+                            knoten: None,
                             selecting,
                             phase,
                         });

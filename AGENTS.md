@@ -791,22 +791,29 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
   Prüfbild `--demo "draw,parallele"`.
 - **Abrunden und Phase (T0247)**: Zwei Werkzeuge im Reiter „Ändern" (Gruppe
-  Geometrie) bearbeiten eine **Ecke aus zwei Linien**. Der Ablauf ist immer
-  derselbe: Klick auf die erste Linie, Klick auf die zweite (der Schnittpunkt
-  wird geprüft), dann das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
-  getippt + Enter. Die getippte Zahl **ist** das Maß (`Tool::obj2` schaltet den
-  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem
-  Zeiger ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie
-  steht **einmal** in `crates/jjcad-core/src/ecke.rs` (`ecke`, `anwenden`);
-  Klick (`canvas::ecke_setzen`), Vorschau (`draw_tool_preview`) und die Actions
-  `modify.fillet`/`modify.chamfer` rufen sie. Welcher Teil einer Linie stehen
-  bleibt, entscheidet die **Klickstelle** (`picks` im Befehl), ohne sie die
-  längere Seite. Das Verbindungsstück (Bogen bzw. Gerade) erbt Ebene und Stil
-  der ersten Linie; beide Linien werden gekürzt. Zu großes Maß, parallele
-  Linien und andere Objektarten sind Fehler (kein stiller Erfolg, T0038).
-  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (5 Tests) und
-  `cargo test -p jjcad-gui tests_ecke` (5 Tests); Prüfbilder `--demo abrunden`
-  und `--demo phase`.
+  Geometrie) bearbeiten eine **Ecke**. Die Ecke ist **ein** Klick, wenn der Zeiger
+  sie schon trifft: der **Schnittpunkt zweier Linien** (`ecke::linien_durch` liefert
+  alle Linien im Fangradius, zwei davon bilden die Ecke) oder der **Knick einer
+  Polylinie** (`ecke::polylinien_knoten`; offene Enden und Knicke an Bogenstücken
+  werden gar nicht angeboten). Sonst wählt der erste Klick eine Linie, der zweite
+  die Partnerlinie. Danach das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
+  getippt + Enter. Die getippte Zahl **ist** das Maß (`ecke_bereit` schaltet den
+  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem Zeiger
+  ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie steht
+  **einmal** in `crates/jjcad-core/src/ecke.rs`: `ecke_aus_strahlen` ist die reine
+  Rechnung auf zwei Schenkeln, `ecke`/`anwenden` arbeiten auf zwei Linien,
+  `ecke_polylinie`/`anwenden_polylinie` auf dem Knick einer Polylinie (der
+  Scheitelpunkt wird durch die beiden Anschlusspunkte ersetzt, dazwischen steht der
+  Bogen als Bulge — alles in **einem** Objekt). Klick (`canvas::ecke_setzen`),
+  Vorschau (`draw_tool_preview`) und die Actions `modify.fillet`/`modify.chamfer`
+  (Parameter `ids` + optional `vertex`) rufen dieselben Funktionen. Welcher Teil
+  einer Linie stehen bleibt, entscheidet die **Klickstelle** (`picks` im Befehl),
+  ohne sie die längere Seite. Das Verbindungsstück erbt Ebene und Stil der ersten
+  Linie; beide Linien werden gekürzt. Zu großes Maß, parallele Linien und andere
+  Objektarten sind Fehler (kein stiller Erfolg, T0038).
+  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (11 Tests) und
+  `cargo test -p jjcad-gui tests_ecke` (9 Tests); Prüfbilder `--demo abrunden`,
+  `--demo phase` und `--demo knick`.
 - **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
   Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
   `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende

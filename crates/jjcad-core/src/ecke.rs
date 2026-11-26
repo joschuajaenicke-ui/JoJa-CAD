@@ -357,13 +357,23 @@ fn knick_ist_gerade(verts: &[crate::geom::Vertex], knoten: usize) -> Result<(), 
 pub fn polylinien_knoten(doc: &Document, bei: Vec2, tol: f64) -> Option<(Id, usize, Vec2)> {
     let mut best: Option<(f64, Id, usize, Vec2)> = None;
     for e in doc.ents() {
-        let EntityKind::Polyline { verts, .. } = &e.kind else {
+        let EntityKind::Polyline { verts, closed } = &e.kind else {
             continue;
         };
         if !doc.layer_sichtbar(e.layer) || doc.layer_gesperrt(e.layer) {
             continue;
         }
+        let n = verts.len();
         for (i, v) in verts.iter().enumerate() {
+            // Offene Enden und Knicke an Bogenstücken sind keine brauchbaren
+            // Ecken — sie werden gar nicht erst angeboten.
+            if !*closed && (i == 0 || i + 1 == n) {
+                continue;
+            }
+            let vor = (i + n - 1) % n;
+            if verts[vor].bulge.abs() > 1e-9 || v.bulge.abs() > 1e-9 {
+                continue;
+            }
             let d = v.p.dist(bei);
             if d <= tol && best.map(|(bd, ..)| d < bd).unwrap_or(true) {
                 best = Some((d, e.id, i, v.p));
