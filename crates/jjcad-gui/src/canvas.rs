@@ -1736,9 +1736,49 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 /// alte Text beim Doppelklick auf eine geladene Zeichnung im Hintergrund
 /// stehen (T0019, Turn 3).
 fn ohne_texteingabe(app: &App, dl: &mut DisplayList) {
-    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
-        dl.prims.retain(|p| p.entity != id);
+    let Some(t) = app.ui.texteingabe.as_ref() else {
+        return;
+    };
+    let Some(id) = t.id else {
+        return;
+    };
+    // Höhenangabe einer Maßkette (T0253): nur **diese eine Zeile** ausblenden.
+    // Das ganze Objekt zu entfernen nähme die Maßkette samt Maßzahlen aus dem
+    // Bild — übrig bliebe nur das Eingabefeld.
+    if let Some(index) = t.hoehe {
+        let Some(e) = app.doc().entity(id) else {
+            return;
+        };
+        let EntityKind::Dim {
+            pts,
+            line_pos,
+            angle,
+            ..
+        } = &e.kind
+        else {
+            return;
+        };
+        let skala = app.doc().plan_scale_of_layer(e.layer).max(0.01);
+        let style = &app.doc().dim_style;
+        let gap = style
+            .text_gap
+            .max(style.text_height * jjcad_core::render::DIM_TEXT_ABSTAND_H)
+            * skala;
+        let Some((_, anker, _, _)) = jjcad_core::render::dim_hoehe_lagen(
+            pts, *line_pos, *angle, gap,
+        )
+        .get(index)
+        .copied()
+        else {
+            return;
+        };
+        dl.prims.retain(|p| {
+            !(p.entity == id
+                && matches!(&p.shape, jjcad_core::render::Shape::Text(tp) if tp.pos.dist(anker) < 1e-6))
+        });
+        return;
     }
+    dl.prims.retain(|p| p.entity != id);
 }
 
 /// Die Maßkette, deren Messpunkte gerade gesetzt werden, steht als **Vorschau**
@@ -5412,6 +5452,11 @@ fn handle_input(
         && resp.double_clicked_by(egui::PointerButton::Primary)
     {
         if let Some(p) = raw.or(snapped) {
+            if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+                app.verwerfe_move_drag();
+                crate::textedit::start_hoehe(app, id, index);
+                return;
+            }
             if let Some(id) = crate::textedit::text_bei(app, p) {
                 app.verwerfe_move_drag();
                 crate::textedit::start_entitaet(app, id);
@@ -5574,8 +5619,15 @@ fn handle_input(
     }
 
     // Doppelklick auf einen Text: Inhalt direkt in der Zeichnung ändern.
+    // Eine Höhenangabe unter einer Maßkette ist ebenfalls ein Textfeld und
+    // wird genauso geöffnet (T0253).
     if app.tool.is_none() && resp.double_clicked_by(egui::PointerButton::Primary) {
-        if let Some(id) = crate::textedit::text_bei(app, raw.unwrap_or(w)) {
+        let p = raw.unwrap_or(w);
+        if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+            crate::textedit::start_hoehe(app, id, index);
+            return;
+        }
+        if let Some(id) = crate::textedit::text_bei(app, p) {
             crate::textedit::start_entitaet(app, id);
             return;
         }
@@ -7702,6 +7754,11 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
+    // Höhenangabe (T0253): die Kette unter dem Zeiger tritt hervor, damit vor
+    // dem Klick klar ist, wozu die Angabe gehören wird.
+    if tool.action == "dim.height" {
+        return dim_kette_unter_zeiger(app, w, tol);
+    }
     // Abrunden und Phase (T0247): solange das Paar noch nicht steht, tritt die
     // Linie unter dem Zeiger hervor — sonst ist nicht zu sehen, welche gemeint ist.
     if ist_eckenwerkzeug(&tool.action) && tool.obj2.is_none() {
@@ -8386,6 +8443,33 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     let _ = run(app, &action, json!({"ids": [id], "p": ax(w)}));
                     app.tool = Some(tool);
                 }
+            }
+        }
+        // Höhenangabe unter einer Maßkette (T0253): **ein** Klick auf die
+        // Kette, danach steht das Textfeld unter dem getroffenen Abschnitt
+        // (Esc/Enter übernimmt). Ein Doppelklick auf eine vorhandene Angabe
+        // öffnet sie ohne dieses Werkzeug.
+        "dim.height" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            match dim_kette_unter_zeiger(app, w, tol) {
+                Some(id) => {
+                    // Auf eine vorhandene Angabe geklickt: genau die ändern.
+                    let idx = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), raw)
+                        .filter(|(h, _)| *h == id)
+                        .and_then(|(_, i)| Some(i))
+                        .or_else(|| {
+                            app.doc()
+                                .entity(id)
+                                .and_then(|e| jjcad_core::render::dim_abschnitt_bei(&e.kind, raw))
+                        });
+                    match idx {
+                        Some(index) => {
+                            crate::textedit::start_hoehe(app, id, index);
+                        }
+                        None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
+                    }
+                }
+                None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
             }
         }
         "dim.elevation.plan" => {
@@ -20838,5 +20922,89 @@ mod tests_laengenvorschau {
             (ende.x - erwartet.x).abs() < 1.5 && (ende.y - erwartet.y).abs() < 1.5,
             "die Vorschau endet bei {ende:?}, erwartet {erwartet:?} (800 mm)"
         );
+    }
+}
+
+mod tests_hoehenangabe {
+    //! T0253: Das Werkzeug „Höhenangabe“ öffnet unter dem angeklickten
+    //! Abschnitt ein Textfeld; geschrieben wird über `dim.height.set`.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    fn kette(app: &mut App) -> u64 {
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        antwort["created"][0].as_u64().expect("Kennung")
+    }
+
+    #[test]
+    fn werkzeug_oeffnet_das_feld_unter_dem_abschnitt() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.start_tool("dim.height");
+        // Klick auf die Maßlinie im zweiten Abschnitt (2000 … 5000).
+        tool_click(&mut app, V2::new(4000.0, -500.0));
+        let t = app
+            .ui
+            .texteingabe
+            .as_ref()
+            .expect("das Textfeld muss offen sein");
+        assert_eq!(t.id, Some(id), "das Feld gehört zur Maßkette");
+        assert_eq!(t.hoehe, Some(1), "der zweite Abschnitt ist gewählt");
+        assert!(t.pos.y < -500.0, "das Feld steht unter der Maßlinie");
+        assert!(t.text.is_empty(), "eine neue Angabe beginnt leer");
+    }
+
+    #[test]
+    fn das_offene_feld_nimmt_nur_die_hoehenangabe_aus_dem_bild() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.session_mut()
+            .execute(
+                "dim.height.set",
+                &json!({"ids": [id], "index": 1, "text": "+2,40"}),
+            )
+            .expect("setzen");
+        assert!(crate::textedit::start_hoehe(&mut app, id, 1));
+        let dl = display_list(&mut app);
+        let eigene: Vec<_> = dl.prims.iter().filter(|p| p.entity == id).collect();
+        assert!(
+            eigene
+                .iter()
+                .any(|p| matches!(&p.shape, jjcad_core::render::Shape::Line(..))),
+            "die Maßkette muss sichtbar bleiben"
+        );
+        let texte = eigene
+            .iter()
+            .filter(|p| matches!(&p.shape, jjcad_core::render::Shape::Text(_)))
+            .count();
+        assert_eq!(texte, 2, "die beiden Maßzahlen bleiben stehen");
+        assert!(
+            !eigene.iter().any(|p| matches!(&p.shape,
+                jjcad_core::render::Shape::Text(t) if t.text == "+2,40")),
+            "die bearbeitete Angabe ist ausgeblendet"
+        );
+    }
+
+    #[test]
+    fn ohne_masskette_bleibt_das_werkzeug_offen() {
+        let mut app = app();
+        app.start_tool("dim.height");
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        assert!(app.ui.texteingabe.is_none(), "nirgends eine Maßkette");
+        assert_eq!(app.tool_id(), Some("dim.height"), "das Werkzeug läuft weiter");
     }
 }

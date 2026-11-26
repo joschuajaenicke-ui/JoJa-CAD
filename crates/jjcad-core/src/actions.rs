@@ -313,6 +313,10 @@ pub const ACTIONS: &[ActionDef] = &[
     // (T0154) — beides im Reiter „Bemaßung".
     act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
     act!("dim.point.remove", "action.dim.point.remove.label", Bemassung, "erase", "", "action.dim.point.remove.hint", true),
+    // Höhenangaben unter einer Maßkette (T0253): ein Werkzeug zum Setzen,
+    // ein Befehl zum Schreiben (Editor, MCP, Skripte).
+    act!("dim.height", "action.dim.height.label", Bemassung, "dim-height", "", "action.dim.height.hint", true),
+    act!("dim.height.set", "action.dim.height.set.label", Bemassung, "dim-height", "", "action.dim.height.set.hint", false),
     act!("dim.elevation.plan", "action.dim.elevation.plan.label", Bemassung, "elevation", "n", "action.dim.elevation.plan.hint", true),
     act!("dim.elevation.section", "action.dim.elevation.section.label", Bemassung, "elevation-section", "", "action.dim.elevation.section.hint", true),
     act!(
@@ -438,6 +442,7 @@ pub fn is_mutating(id: &str) -> bool {
             | "dim.elevation.section"
             | "dim.room"
             | "dim.style"
+            | "dim.height.set"
             | "modify.move"
             | "modify.order"
             | "modify.copy"
@@ -1779,6 +1784,7 @@ fn dim_kette(
             override_text: p.text("text"),
             ext_lines: p.boolean_or("ext_lines", false),
             symbol: dim_symbol(doc, p)?,
+            heights: Vec::new(),
         },
     );
     apply_common(doc, &mut e, p, layer);
@@ -2603,6 +2609,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     override_text: p.text("text"),
                     ext_lines: p.boolean_or("ext_lines", false),
                     symbol: dim_symbol(doc, &p)?,
+                    heights: Vec::new(),
                 },
             );
             apply_common(doc, &mut e, &p, layer);
@@ -2639,7 +2646,10 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let e = doc
                     .entity_mut(id)
                     .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
-                let EntityKind::Dim { pts, angle, .. } = &mut e.kind else {
+                let EntityKind::Dim {
+                    pts, angle, heights, ..
+                } = &mut e.kind
+                else {
                     return Err("dim.point.add · Objekt ist keine Maßkette".to_string());
                 };
                 let idx = match p.num("index") {
@@ -2647,6 +2657,11 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     None => einfuege_index(pts, *angle, q),
                 };
                 pts.insert(idx, q);
+                // Höhenangaben hängen am Abschnitt (T0253): der neue Abschnitt
+                // beginnt ohne Angabe, die alten behalten ihre.
+                if !heights.is_empty() {
+                    heights.insert(idx.min(heights.len()), String::new());
+                }
                 (idx, pts.len())
             };
             doc.modified = true;
@@ -2664,7 +2679,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 let e = doc
                     .entity_mut(id)
                     .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
-                let EntityKind::Dim { pts, .. } = &mut e.kind else {
+                let EntityKind::Dim { pts, heights, .. } = &mut e.kind else {
                     return Err("dim.point.remove · Objekt ist keine Maßkette".to_string());
                 };
                 if pts.len() <= 2 {
@@ -2686,10 +2701,50 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     }
                 };
                 pts.remove(idx);
+                // Die Höhenangabe des wegfallenden Abschnitts fällt mit ihm
+                // weg (T0253); die übrigen rücken nach.
+                if idx < heights.len() {
+                    heights.remove(idx);
+                }
                 (idx, pts.len())
             };
             doc.modified = true;
             Ok(json!({"ok": true, "changed": [id], "index": idx, "punkte": punkte}))
+        }
+        // Höhenangabe eines Abschnitts schreiben (T0253). Ein leerer Text
+        // nimmt sie zurück; der Index muss ein vorhandener Abschnitt sein —
+        // ein stiller Ersatz wäre ein Fehler (T0038).
+        "dim.height.set" => {
+            let ids = ids_from(&p, "ids");
+            if ids.len() != 1 {
+                return Err("dim.height.set · genau eine Maßkette angeben".to_string());
+            }
+            let id = ids[0];
+            let idx = match p.num("index") {
+                Some(i) => i.round().max(0.0) as usize,
+                None => return Err("dim.height.set · Parameter 'index' fehlt".to_string()),
+            };
+            let text = p.text("text").unwrap_or_default().trim().to_string();
+            {
+                let e = doc
+                    .entity_mut(id)
+                    .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                let EntityKind::Dim { pts, heights, .. } = &mut e.kind else {
+                    return Err("dim.height.set · Objekt ist keine Maßkette".to_string());
+                };
+                let abschnitte = pts.len().saturating_sub(1);
+                if idx >= abschnitte {
+                    return Err(format!(
+                        "dim.height.set · Abschnitt {idx} gibt es nicht (die Kette hat {abschnitte})"
+                    ));
+                }
+                if heights.len() < abschnitte {
+                    heights.resize(abschnitte, String::new());
+                }
+                heights[idx] = text;
+            }
+            doc.modified = true;
+            Ok(json!({"ok": true, "changed": [id], "index": idx}))
         }
         // Grundriss-Kote: Kreis-Symbol, Höhe kommt aus dem Panel. Die Lage des
         // Höhenwertes ist `text_pos` (Vorgabe „oben", T0196) — ein unbekannter
@@ -3834,9 +3889,23 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                             override_text,
                             ext_lines,
                             symbol,
+                            heights,
                         } => {
                             if let Some(v) = text {
                                 *override_text = Some(v);
+                            }
+                            // Höhenangaben unter den Abschnitten (T0253):
+                            // ein Feld je Abschnitt. `null`/`[]` nimmt sie
+                            // alle zurück.
+                            if let Some(list) = p.v.get("heights") {
+                                if list.is_null() {
+                                    heights.clear();
+                                } else if let Some(arr) = list.as_array() {
+                                    *heights = arr
+                                        .iter()
+                                        .map(|v| v.as_str().unwrap_or("").to_string())
+                                        .collect();
+                                }
                             }
                             // Punktsymbol an den Messpunkten (T0227): leer =
                             // kein Symbol, sonst steht der Block geprüft bereit.

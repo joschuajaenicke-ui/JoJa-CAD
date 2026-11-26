@@ -50,6 +50,14 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
+   **Höhenangabe** (Ribbon ▸ Bemaßung ▸ „Höhenangabe“): die Maßkette an dem
+   Abschnitt anklicken, der die Höhe bekommen soll — unter der Maßlinie steht
+   dann ein einfaches Textfeld, in das die Höhe getippt wird. `Esc` oder
+   `Enter` übernimmt, ein Klick daneben ebenfalls, Rechtsklick bricht ab. Jeder
+   Abschnitt trägt höchstens eine Angabe; sie steht **unter** der Maßkette
+   (die Maßzahl steht darüber) und wandert mit ihr mit. Ein **Doppelklick** auf
+   eine vorhandene Höhenangabe öffnet sie wieder zum Ändern; ein leerer Text
+   nimmt sie zurück.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
