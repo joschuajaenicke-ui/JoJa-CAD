@@ -16,6 +16,7 @@ pub mod boundary;
 pub mod daemmung;
 pub mod daten;
 pub mod dxf;
+pub mod ecke;
 pub mod export;
 pub mod flaeche;
 pub mod fonts;

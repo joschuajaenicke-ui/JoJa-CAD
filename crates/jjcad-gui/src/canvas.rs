@@ -3169,13 +3169,8 @@ pub(crate) fn pfad_vorschau(tool: &Tool, cursor: V2, tol: f64) -> PfadVorschau {
     };
     if tool.schritte.last() == Some(&PfadSchritt::ArcPoint) && tool.pts.len() >= 2 {
         let von = tool.pts[tool.pts.len() - 2];
-        return match Arc::from_3_points(von, letzt, cursor) {
-            Some(arc) => PfadVorschau::Bogen(jjcad_core::pfad::PathSeg::Arc {
-                c: arc.c,
-                r: arc.r,
-                a0: arc.a0,
-                a1: arc.a1,
-            }),
+        return match jjcad_core::pfad::arc_aus_3_punkten(von, letzt, cursor) {
+            Some(arc) => PfadVorschau::Bogen(arc),
             // Drei Punkte auf einer Geraden: der Klick legt eine Linie an.
             None => PfadVorschau::Sehne {
                 von,
@@ -3230,6 +3225,47 @@ fn paint_vorschau_dl(
     }
 }
 
+/// Der Punkt, den die Werkzeug-Vorschau als „Zeiger" benutzt (T0246).
+///
+/// Ohne Eingabe ist das der Fangpunkt selbst. Steht eine **Länge** im
+/// Tippepuffer, liegt der Vorschau-Punkt in dieser Entfernung auf der
+/// Zeigerrichtung — dieselbe Rechnung, die `Enter` beim Absetzen anwendet
+/// (`letzte + Richtung × getippte Länge`). Vorher zeigte die Vorschau weiter
+/// bis zum Mauszeiger, das Feld daneben aber schon die getippte Zahl.
+///
+/// Nicht hierher gehören die Zahlen, die **keine** Länge sind: Koordinaten
+/// (`x;y` — Semikolon), der Winkel beim Drehen und das Maß von Abrunden/Phase
+/// (dort steht die zweite Linie schon fest). Ebenso bleibt es beim Zeiger,
+/// solange kein letzter Punkt steht oder der Zeiger keine Richtung gibt (er
+/// liegt genau auf dem letzten Punkt).
+pub fn vorschau_punkt(app: &App, zeiger: Option<V2>) -> Option<V2> {
+    let w = zeiger?;
+    let eingabe = app.ui.typed.trim();
+    let Some(tool) = app.tool.as_ref() else {
+        return Some(w);
+    };
+    if eingabe.is_empty() || app.hilfslinie_modus || eingabe.contains(';') {
+        return Some(w);
+    }
+    if ist_drehwerkzeug(&tool.action) || (ist_eckenwerkzeug(&tool.action) && tool.obj2.is_some()) {
+        return Some(w);
+    }
+    let Some(start) = tool.pts.last().copied() else {
+        return Some(w);
+    };
+    let Some(laenge) = jjcad_core::units::parse_length(eingabe, app.unit()) else {
+        return Some(w);
+    };
+    if laenge <= 0.0 {
+        return Some(w);
+    }
+    let richtung = (w - start).normalized();
+    if richtung.len() <= 0.0 {
+        return Some(w);
+    }
+    Some(start + richtung * laenge)
+}
+
 fn draw_tool_preview(
     app: &mut App,
     p: &Painter,
@@ -3247,7 +3283,9 @@ fn draw_tool_preview(
     ) {
         app.paint.zuruecksetzen();
     }
-    let Some(cursor) = snapped else {
+    // T0246: Mit getippter Länge endet die Vorschau in dieser Entfernung auf
+    // der Zeigerrichtung — sie zeigt damit, was `Enter` setzen wird.
+    let Some(cursor) = vorschau_punkt(app, snapped) else {
         app.paint.zuruecksetzen();
         return;
     };
@@ -4268,6 +4306,48 @@ fn draw_tool_preview(
             // Nach dem ersten Klick: beide Strecken bis zum Schnittpunkt (T0082).
             draw_verschneiden_preview(app, p, rect, view, cursor);
         }
+        "modify.fillet" | "modify.chamfer" => {
+            // Nach den beiden Linien zeigt der Zeiger den Radius bzw. das Maß:
+            // die fertige Ecke, nicht ein Platzhalter (T0247).
+            if let (Some(erstes), Some(zweites), Some(eckpunkt)) =
+                (tool.obj, tool.obj2, last)
+            {
+                let art = if tool.action == "modify.fillet" {
+                    jjcad_core::ecke::EckeArt::Abrunden
+                } else {
+                    jjcad_core::ecke::EckeArt::Phase
+                };
+                let mass = eckpunkt.dist(cursor);
+                p.circle_stroke(w2s(eckpunkt), 4.0, dashed);
+                if mass >= 1.0 {
+                    let tol = (0.3 / view.zoom).max(1e-3);
+                    if let Ok(e) = jjcad_core::ecke::ecke(
+                        app.doc(),
+                        erstes,
+                        zweites,
+                        tool.pick_a,
+                        tool.pick_b,
+                        mass,
+                        art,
+                    ) {
+                        for (q1, q2) in e.strecken(tol) {
+                            p.line_segment([w2s(q1), w2s(q2)], stroke);
+                        }
+                    }
+                }
+                let vor = if art == jjcad_core::ecke::EckeArt::Abrunden {
+                    "R "
+                } else {
+                    ""
+                };
+                label = format!(
+                    "{}{} {}",
+                    vor,
+                    unit.format_plain(mass, unit.decimals()),
+                    unit.short()
+                );
+            }
+        }
         "modify.explode" => {
             // Das Objekt unter dem Zeiger, das ein Klick auflösen würde (T0093).
             draw_explode_preview(app, p, rect, view, cursor);
@@ -5214,6 +5294,15 @@ fn handle_input(
         }
         if ctx.input(|i| i.key_pressed(egui::Key::Enter)) {
             let typed = app.ui.typed.clone();
+            // Abrunden/Phase (T0247): die getippte Zahl **ist** das Maß. Der
+            // Weg über einen Punkt taugt hier nicht — steht der Zeiger noch
+            // auf dem Eckpunkt, gibt es keine Richtung (T0236).
+            let eckenwerkzeug = app.tool.clone().filter(|t| {
+                ist_eckenwerkzeug(&t.action)
+                    && t.obj2.is_some()
+                    && !typed.is_empty()
+                    && !typed.contains(';')
+            });
             // Drehen: die getippte Zahl ist ein Winkel in Grad, keine Länge
             // (T0151). Muss **vor** dem Längenzweig stehen — der zog den
             // „bis"-Punkt auf einen Abstand und drehte damit um einen Winkel,
@@ -5222,7 +5311,23 @@ fn handle_input(
                 .tool
                 .clone()
                 .filter(|t| ist_drehwerkzeug(&t.action) && !typed.is_empty() && !typed.contains(';'));
-            if let Some(t) = dreh {
+            if let Some(t) = eckenwerkzeug {
+                match jjcad_core::units::parse_length(&typed, app.unit()) {
+                    Some(mass) if mass >= 1.0 => {
+                        if ecke_setzen(app, &t, mass) {
+                            if let Some(cur) = app.tool.as_mut() {
+                                cur.obj = None;
+                                cur.obj2 = None;
+                                cur.pick_a = None;
+                                cur.pick_b = None;
+                                cur.pts.clear();
+                            }
+                        }
+                    }
+                    _ => app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_mass_zu_klein")),
+                }
+                app.ui.typed.clear();
+            } else if let Some(t) = dreh {
                 let cursor = snapped.or_else(|| {
                     ctx.pointer_hover_pos()
                         .map(|pos| screen_to_world(rect, view, pos))
@@ -7410,6 +7515,9 @@ fn restart_tool(app: &mut App, action: &str) {
         schritte: Vec::new(),
         bogen: false,
         obj: None,
+        obj2: None,
+        pick_a: None,
+        pick_b: None,
         selecting: false,
         phase: ToolPhase::Collecting,
     });
@@ -7440,6 +7548,44 @@ fn basis_hoehe(a: V2, b: V2, p: V2) -> f64 {
 
 fn tool_click(app: &mut App, w: V2) {
     tool_click_at(app, w, w);
+}
+
+/// Ist das ein Werkzeug, das eine Ecke aus zwei Linien bearbeitet (T0247)?
+fn ist_eckenwerkzeug(action: &str) -> bool {
+    matches!(action, "modify.fillet" | "modify.chamfer")
+}
+
+/// Setzt die Eckbearbeitung am gewählten Linienpaar. `mass_mm` ist der Radius
+/// (Abrunden) bzw. das Maß (Phase) in Millimetern.
+///
+/// Der eine Weg für Klick und Tippeingabe: die getippte Zahl darf direkt das
+/// Maß sein, damit der Radius auch dann ankommt, wenn der Zeiger noch genau
+/// auf dem Eckpunkt steht (dort gibt es keine Richtung, T0236).
+fn ecke_setzen(app: &mut App, tool: &Tool, mass_mm: f64) -> bool {
+    let (Some(a), Some(b), Some(eckpunkt)) = (tool.obj, tool.obj2, tool.pts.first().copied())
+    else {
+        return false;
+    };
+    let unit = app.unit();
+    let ax = |p: V2| [unit.from_mm(p.x), unit.from_mm(p.y)];
+    let pick_a = tool.pick_a.unwrap_or(eckpunkt);
+    let pick_b = tool.pick_b.unwrap_or(eckpunkt);
+    let schluessel = if tool.action == "modify.fillet" {
+        "radius"
+    } else {
+        "distance"
+    };
+    let mut params = json!({
+        "ids": [a, b],
+        "mass": unit.from_mm(mass_mm),
+        "picks": [ax(pick_a), ax(pick_b)],
+    });
+    params[schluessel] = json!(unit.from_mm(mass_mm));
+    let ok = run(app, &tool.action, params);
+    if ok {
+        app.session_mut().select(vec![a, b]);
+    }
+    ok
 }
 
 // ---------------------------------------------------------------------------
@@ -7556,6 +7702,16 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
+    // Abrunden und Phase (T0247): solange das Paar noch nicht steht, tritt die
+    // Linie unter dem Zeiger hervor — sonst ist nicht zu sehen, welche gemeint ist.
+    if ist_eckenwerkzeug(&tool.action) && tool.obj2.is_none() {
+        return snap::hit_test(app.doc(), w, tol, None).filter(|id| {
+            matches!(
+                app.doc().entity(*id).map(|e| &e.kind),
+                Some(EntityKind::Line { .. })
+            )
+        });
+    }
     // Parallele (T0200): im ersten Schritt wählt der Klick eine Linie oder
     // Polylinie — sie muss vorher hervortreten, sonst ist nicht zu sehen,
     // wozu die Parallele gehören wird.
@@ -7644,6 +7800,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         schritte: Vec::new(),
                         bogen: false,
                         obj: None,
+                        obj2: None,
+                        pick_a: None,
+                        pick_b: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -7680,6 +7839,9 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                         schritte: Vec::new(),
                         bogen: false,
                         obj: None,
+                        obj2: None,
+                        pick_a: None,
+                        pick_b: None,
                         selecting: false,
                         phase: ToolPhase::Collecting,
                     });
@@ -8498,6 +8660,70 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     if let Some(t) = app.tool.as_mut() {
                         t.obj = None;
                     }
+                }
+            }
+        }
+        // Abrunden und Phase (T0247): zwei Linien anklicken, dann das Maß am
+        // Zeiger (Klick) oder getippt (Enter, siehe `handle_input`).
+        "modify.fillet" | "modify.chamfer" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            // 1. und 2. Klick: die beiden Linien.
+            if tool.obj.is_none() || tool.obj2.is_none() {
+                let Some(id) = snap::hit_test(app.doc(), w, tol, None) else {
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
+                    return;
+                };
+                if !matches!(
+                    app.doc().entity(id).map(|e| &e.kind),
+                    Some(EntityKind::Line { .. })
+                ) {
+                    app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_keine_linie"));
+                    return;
+                }
+                match tool.obj {
+                    None => {
+                        tool.obj = Some(id);
+                        tool.pick_a = Some(w);
+                        app.session_mut().select(vec![id]);
+                        app.tool = Some(tool);
+                    }
+                    Some(erstes) if erstes == id => {
+                        app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_zwei_linien"));
+                    }
+                    Some(erstes) => {
+                        match jjcad_core::ecke::schnittpunkt(app.doc(), erstes, id) {
+                            Ok(eckpunkt) => {
+                                tool.obj2 = Some(id);
+                                tool.pick_b = Some(w);
+                                tool.pts = vec![eckpunkt];
+                                app.session_mut().select(vec![erstes, id]);
+                                app.tool = Some(tool);
+                            }
+                            Err(_) => {
+                                app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_kein_schnitt"))
+                            }
+                        }
+                    }
+                }
+                return;
+            }
+            // 3. Klick: das Maß ist der Abstand vom Eckpunkt.
+            let Some(eckpunkt) = tool.pts.first().copied() else {
+                return;
+            };
+            let mass = eckpunkt.dist(w);
+            if mass < 1.0 {
+                app.toast(jjcad_core::i18n::tr("gui.canvas.ecke_mass_zu_klein"));
+                return;
+            }
+            if ecke_setzen(app, &tool, mass) {
+                // Werkzeug bleibt für das nächste Paar aktiv.
+                if let Some(t) = app.tool.as_mut() {
+                    t.obj = None;
+                    t.obj2 = None;
+                    t.pick_a = None;
+                    t.pick_b = None;
+                    t.pts.clear();
                 }
             }
         }
@@ -19049,6 +19275,180 @@ mod tests_parallele {
 }
 
 #[cfg(test)]
+mod tests_ecke {
+    //! Abrunden und Phase (T0247).
+    //!
+    //! Der Klickweg läuft über dieselbe Funktion wie die Maus (`tool_click`):
+    //! erst zwei Linien, dann das Maß am Zeiger. Geprüft wird die gespeicherte
+    //! Geometrie — gekürzte Linien und der neue Bogen bzw. die Fase.
+
+    use super::*;
+
+    fn app_mit_ecke() -> (App, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [2000.0, 0.0]}),
+        );
+        let waagerecht = *app.session().last_created.first().expect("Linie");
+        run(
+            &mut app,
+            "draw.line",
+            json!({"a": [0.0, 0.0], "b": [0.0, 2000.0]}),
+        );
+        let senkrecht = *app.session().last_created.first().expect("Linie");
+        (app, waagerecht, senkrecht)
+    }
+
+    fn enden(app: &App, id: Id) -> (V2, V2) {
+        match &app.doc().entity(id).expect("Objekt fehlt").kind {
+            EntityKind::Line { a, b } => (*a, *b),
+            other => panic!("keine Linie: {other:?}"),
+        }
+    }
+
+    fn nahe(p: V2, x: f64, y: f64) -> bool {
+        p.dist(V2::new(x, y)) < 1e-6
+    }
+
+    /// Zwei Klicks wählen die Linien, der dritte setzt den Radius. Danach
+    /// steht die Ecke in der Zeichnung und das Werkzeug ist wieder leer.
+    #[test]
+    fn klicks_runden_die_ecke_ab() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj),
+            Some(waagerecht),
+            "erste Linie gewählt"
+        );
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        assert_eq!(
+            app.tool.as_ref().and_then(|t| t.obj2),
+            Some(senkrecht),
+            "zweite Linie gewählt"
+        );
+        let eckpunkt = app.tool.as_ref().and_then(|t| t.pts.first().copied());
+        assert!(
+            eckpunkt.map(|p| nahe(p, 0.0, 0.0)).unwrap_or(false),
+            "Eckpunkt ist der Schnittpunkt: {eckpunkt:?}"
+        );
+
+        // Dritter Klick: 200 mm vom Eckpunkt entfernt = Radius 200.
+        tool_click(&mut app, V2::new(200.0, 0.0));
+
+        let (a1, a2) = enden(&app, waagerecht);
+        assert!(nahe(a1, 200.0, 0.0) && nahe(a2, 2000.0, 0.0), "{a1:?} {a2:?}");
+        let (b1, b2) = enden(&app, senkrecht);
+        assert!(nahe(b1, 0.0, 200.0) && nahe(b2, 0.0, 2000.0), "{b1:?} {b2:?}");
+        let bogen = app
+            .doc()
+            .entities
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Arc { .. }))
+            .expect("Bogen fehlt");
+        match &bogen.kind {
+            EntityKind::Arc { c, r, .. } => {
+                assert!(nahe(*c, 200.0, 200.0), "Mittelpunkt {c:?}");
+                assert!((r - 200.0).abs() < 1e-6, "Radius {r}");
+            }
+            _ => unreachable!(),
+        }
+
+        // Werkzeug bleibt für das nächste Paar aktiv, aber ohne Altbestand.
+        let t = app.tool.as_ref().expect("Werkzeug läuft weiter");
+        assert!(t.obj.is_none() && t.obj2.is_none() && t.pts.is_empty());
+    }
+
+    /// Die Phase setzt statt des Bogens eine gerade Verbindung.
+    #[test]
+    fn klicks_setzen_eine_phase() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.chamfer");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        // 150 mm vom Eckpunkt: das Maß der Phase.
+        tool_click(&mut app, V2::new(0.0, 150.0));
+
+        let (a1, _) = enden(&app, waagerecht);
+        assert!(nahe(a1, 150.0, 0.0), "Schenkel gekürzt: {a1:?}");
+        let (_b1, _) = enden(&app, senkrecht);
+        let fase = app
+            .doc()
+            .entities
+            .iter()
+            .filter(|e| matches!(e.kind, EntityKind::Line { .. }))
+            .filter(|e| e.id != waagerecht && e.id != senkrecht)
+            .count();
+        assert_eq!(fase, 1, "genau eine Fasenlinie");
+    }
+
+    /// Eine getippte Zahl ist das Maß selbst. Sie kommt auch dann an, wenn der
+    /// Zeiger noch auf dem Eckpunkt steht — dort gibt es keine Richtung.
+    #[test]
+    fn getipptes_mass_wird_gesetzt() {
+        let (mut app, waagerecht, senkrecht) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(0.0, 1000.0));
+        let tool = app.tool.clone().expect("Werkzeug");
+        assert!(ecke_setzen(&mut app, &tool, 250.0), "Maß gesetzt");
+        let (a1, _) = enden(&app, waagerecht);
+        assert!(nahe(a1, 250.0, 0.0), "{a1:?}");
+        let (b1, _) = enden(&app, senkrecht);
+        assert!(nahe(b1, 0.0, 250.0), "{b1:?}");
+    }
+
+    /// Ein Kreis ist keine Linie — der Klick wird abgewiesen, ohne die
+    /// Zeichnung zu verändern (kein stiller Erfolg, T0038).
+    #[test]
+    fn nur_linien_werden_gewaehlt() {
+        let (mut app, _waagerecht, _senkrecht) = app_mit_ecke();
+        run(
+            &mut app,
+            "draw.circle",
+            json!({"c": [500.0, 500.0], "r": 100.0}),
+        );
+        let vorher = app.doc().entities.len();
+        app.start_tool("modify.fillet");
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        tool_click(&mut app, V2::new(600.0, 500.0));
+        assert!(
+            app.tool.as_ref().and_then(|t| t.obj2).is_none(),
+            "der Kreis wird nicht zum Paar"
+        );
+        assert_eq!(app.doc().entities.len(), vorher, "nichts entstanden");
+    }
+
+    /// Die Aufforderung im Chat folgt den drei Schritten.
+    #[test]
+    fn aufforderung_folgt_den_drei_schritten() {
+        let (mut app, _a, _b) = app_mit_ecke();
+        app.start_tool("modify.fillet");
+        let opts = crate::app::ToolOptions::from_doc(app.doc());
+        let mut t = app.tool.clone().unwrap();
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_erste_linie_anklicken")
+        );
+        t.obj = Some(1);
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_zweite_linie_anklicken")
+        );
+        t.obj2 = Some(2);
+        assert_eq!(
+            crate::app::commands_hint(&t, &opts),
+            jjcad_core::i18n::tr("gui.app.abrunden_radius_klicken")
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests_pfad {
     //! Pfad-Werkzeug (T0229): Linien und Bögen am Stück, Umschalt wechselt den
     //! Modus, Verbinden macht aus ausgewählten Linien einen Pfad.
@@ -20281,6 +20681,162 @@ mod tests_zeigerfeld {
         assert!(
             !tipp_rect.intersects(icon_rect(zeiger)),
             "Tippfeld und Werkzeug-Icon überlagern sich: {tipp_rect:?}"
+        );
+    }
+}
+#[cfg(test)]
+mod tests_laengenvorschau {
+    //! Vorschau mit getippter Länge (T0246).
+    //!
+    //! Wer eine Länge tippt, sieht sie im Feld am Zeiger; die Vorschau zeigte
+    //! aber weiter bis zum Mauszeiger. Geprüft wird die eine Rechnung
+    //! (`vorschau_punkt`) und am gerenderten Bild, dass die Vorschau-Linie in
+    //! der getippten Entfernung endet.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    /// Linienwerkzeug mit Anfangspunkt im Ursprung, Einheit Millimeter, alle
+    /// Fänge aus — der Zeigerpunkt ist damit genau der Mauszeiger.
+    fn app_mit_linienanfang() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        assert!(
+            run(
+                &mut app,
+                "doc.settings",
+                json!({"input_unit": "mm", "snap": {
+                    "ortho": false, "polar": false, "grid": false,
+                    "endpoint": false, "midpoint": false, "center": false,
+                    "intersection": false, "perpendicular": false,
+                    "nearest": false, "wall_edges": false
+                }}),
+            ),
+            "Einstellungen nicht gesetzt"
+        );
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app
+    }
+
+    fn rahmen(app: &mut App, zeiger: Option<Pos2>, tippen: Option<&str>) -> egui::FullOutput {
+        let ctx = app.ctx.clone();
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        if let Some(t) = tippen {
+            raw.events.push(egui::Event::Text(t.to_string()));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Die Vorschau-Linie, die am Anfangspunkt beginnt (Farbe der Vorschau).
+    fn vorschau_linie(out: &egui::FullOutput, start: Pos2) -> Option<(Pos2, Pos2)> {
+        fn suche(s: &egui::Shape, start: Pos2, treffer: &mut Option<(Pos2, Pos2)>) {
+            match s {
+                egui::Shape::LineSegment { points, stroke } => {
+                    let farbe = Palette::vorschau().gamma_multiply(0.9);
+                    let farbe_ok = matches!(
+                        stroke.color,
+                        egui::epaint::ColorMode::Solid(c) if c == farbe
+                    );
+                    if farbe_ok && points[0].distance(start) < 1.5 {
+                        *treffer = Some((points[0], points[1]));
+                    }
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|s| suche(s, start, treffer)),
+                _ => {}
+            }
+        }
+        let mut treffer = None;
+        for cs in &out.shapes {
+            suche(&cs.shape, start, &mut treffer);
+        }
+        treffer
+    }
+
+    /// Kern des Tickets: „1,5" auf der Zeigerrichtung ergibt den Punkt in
+    /// 1,5 m — nicht den Mauszeiger.
+    #[test]
+    fn getippte_laenge_setzt_den_vorschau_punkt_auf_diese_entfernung() {
+        let mut app = app_mit_linienanfang();
+        let zeiger = V2::new(3000.0, 4000.0);
+        assert_eq!(
+            vorschau_punkt(&app, Some(zeiger)),
+            Some(zeiger),
+            "ohne Eingabe zeigt die Vorschau zum Zeiger"
+        );
+
+        app.ui.typed = "1500".into();
+        let p = vorschau_punkt(&app, Some(zeiger)).expect("kein Vorschau-Punkt");
+        // Richtung (3, 4)/5 = (0,6; 0,8), Länge 1500 mm.
+        assert!(
+            (p.x - 900.0).abs() < 1e-6 && (p.y - 1200.0).abs() < 1e-6,
+            "Vorschau-Punkt steht bei {p:?}, erwartet (900, 1200)"
+        );
+    }
+
+    /// Die Zahlen, die keine Länge sind, lassen die Vorschau am Zeiger.
+    #[test]
+    fn winkel_koordinaten_und_eckenmass_bleiben_beim_zeiger() {
+        let zeiger = V2::new(3000.0, 4000.0);
+
+        // Koordinate „x;y" (Semikolon).
+        let mut app = app_mit_linienanfang();
+        app.ui.typed = "100;200".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Drehen: die Zahl ist ein Winkel in Grad.
+        let mut app = app_mit_linienanfang();
+        app.start_tool("modify.rotate");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app.ui.typed = "30".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Ohne letzter Punkt gibt es keine Richtung.
+        let mut app = app_mit_linienanfang();
+        app.tool.as_mut().unwrap().pts.clear();
+        app.ui.typed = "1500".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+    }
+
+    /// Am gerenderten Bild: die Vorschau-Linie endet in der getippten
+    /// Entfernung statt am Mauszeiger.
+    #[test]
+    fn vorschau_linie_endet_in_der_getippten_entfernung() {
+        let mut app = app_mit_linienanfang();
+        app.set_view(View {
+            center: V2::new(0.0, 0.0),
+            zoom: 0.2,
+            rot: 0.0,
+        });
+        rahmen(&mut app, None, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let zeiger = start + Vec2::new(200.0, 0.0);
+
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie am Zeiger");
+        assert!(
+            (ende.x - zeiger.x).abs() < 1.5 && (ende.y - zeiger.y).abs() < 1.5,
+            "ohne Eingabe endet die Vorschau nicht am Zeiger: {ende:?}"
+        );
+
+        // Das erste Bild nimmt nur die Ziffern an (gezeichnet wird vor der
+        // Eingabe), das zweite zeigt die Vorschau mit der getippten Länge.
+        let _ = rahmen(&mut app, Some(zeiger), Some("800"));
+        assert_eq!(app.ui.typed, "800", "die Ziffern landen nicht im Tippepuffer");
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie mit Eingabe");
+        let erwartet = world_to_screen(flaeche, app.current_view(), V2::new(800.0, 0.0));
+        assert!(
+            (ende.x - erwartet.x).abs() < 1.5 && (ende.y - erwartet.y).abs() < 1.5,
+            "die Vorschau endet bei {ende:?}, erwartet {erwartet:?} (800 mm)"
         );
     }
 }

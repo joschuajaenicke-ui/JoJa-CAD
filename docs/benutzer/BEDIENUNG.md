@@ -317,12 +317,14 @@ ausgeblendet.
   **„Art“** darunter listet genau die Arten der Auswahl; eine Wahl lässt nur deren Objekte
   gewählt — aus Wand und Linie wird so die Wand, und das Panel zeigt danach den
   Wand-Abschnitt.
-  **Keine Füllung** (T0242): Die Zeile **Füllfarbe** hat drei Werte — **Keine Füllung**,
-  **Standard** und jede gewählte Farbe. *Keine Füllung* lässt die Fläche weg: eine Wand zeichnet
-  dann nur ihre Kanten, eine Füllfläche nur ihre **Umrandung** (ist sie aus, bleibt von der
-  Fläche nichts sichtbar). Ein gewähltes **Muster** schaltet die Füllung wieder ein. *Standard*
-  ist dagegen eine Füllung mit Vorgabeton — bei einer Wand der graue Wandton, bei einer
-  Füllfläche die aufgehellte Linienfarbe.
+  **Keine Füllung** (T0242): Die Zeile **Füllfarbe** hat drei Werte — **Standard**, **Keine
+  Füllung** und jede gewählte Farbe (Standard steht oben). *Keine Füllung* nimmt **nur den
+  Flächenton** weg: eine Wand zeichnet dann ihre Kanten und, falls gewählt, ihre Schraffur; eine
+  Füllfläche ihr **Muster** und ihre **Umrandung** — nur die Fläche dahinter fehlt. Muster und
+  Fläche sind also unabhängig: eine Schraffur ohne Hintergrundfläche ist möglich; eine
+  Vollfläche ohne Ton zeigt nur ihre Umrandung. *Standard* ist dagegen eine Füllung mit
+  Vorgabeton — bei einer Wand der graue Wandton, bei einer Füllfläche die aufgehellte
+  Linienfarbe.
 - **Farbwahl** (T0183): Die Farbvorgaben stehen in **drei Gruppen** mit eigener Überschrift,
   je zwei Spalten. **Bauteile** trägt die drei Bedeutungfarben der Bauzeichnung — Schwarz
   (Bestand), Rot (Neubau), Gelb (Abbruch). **Gestaltung** ist der geschlossene Farbkreis für
@@ -450,7 +452,18 @@ ausgeblendet.
   (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
   zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
-- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
+- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): zwei **Linien** nacheinander
+  anklicken, die sich schneiden; der Schnittpunkt ist die Ecke. Danach bestimmt der
+  Mauszeiger das Maß — der Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt
+  es sich tippen und mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der
+  Zeiger darf dabei auf dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke:
+  gekürzte Linien und den Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**).
+  Welcher Teil einer Linie stehen bleibt, entscheidet die **Klickstelle** — geklickt wird
+  die Seite, die erhalten bleibt. Abrunden braucht einen Radius, die Phase ein Maß auf
+  beiden Schenkeln; ist es für eine der Linien zu groß, meldet der Chat „Das Maß ist für
+  die kürzere Linie zu groß" und die Zeichnung bleibt unverändert. Nach dem Setzen ist das Werkzeug für das
+  nächste Paar bereit, `ESC` beendet es.
+- **Linien** werden als Kapsel gezeichnet:- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
 - **Linienstärke neuer Objekte** (Einstellungen ▸ Voreinstellungen): eine Zeile je Objektart
@@ -543,7 +556,11 @@ ausgeblendet.
   Blöcke auf **Blöcke**, Linien und Flächen auf **Zeichnung**. Das Eigenschaften-Panel zeigt beim
   Platzieren diese Ziel-Ebene in der Zeile „Layer“; eine dort (oder im Layer-Manager als **eigene**
   Ebene) gewählte Ebene sticht die Vorgabe — wer sie wählt, zeichnet bewusst dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
-  Einstellungen der einzelnen Layer bleiben dabei erhalten.
+  Einstellungen der einzelnen Layer bleiben dabei erhalten. **Alle vier Layer zeichnen schwarz**
+  (`style::LAYER_FARBE`, T0249): vorher trugen Beschriftung ein Rot und Blöcke ein Grau, sodass
+  Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
+  Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
+  Farbpunkt im Layer-Manager.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

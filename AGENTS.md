@@ -279,6 +279,15 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   war die Ursache, dass neue Texte auf „Zeichnung“ landeten (T0202, Turn 3).
   Prüfweg: `cargo test -p jjcad-core --test plaene` und
   `cargo test -p jjcad-gui tests_plaene`.
+- **Standardlayer sind schwarz (T0249)**: Die vier Layer eines Plans tragen als Vorgabe
+  **eine** Farbe, `style::LAYER_FARBE` (= `Color::BLACK`, `#1C1F24`). Vorher stand
+  „Beschriftung“ in Rot und „Blöcke“ in Grau: eine neue Datei zeigte alle Texte,
+  Raumstempel und Blockinstanzen farbig, obwohl der Plan schwarz gezeichnet wird.
+  Geändert ist nur die **Vorgabe** — eine vorhandene Zeichnung bringt ihre Layerfarben
+  in der Datei mit und behält sie (so auch die `samples/`). Wer die Vorgabe prüft,
+  nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
+  `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
+  und `cargo test -p jjcad-core --test massketten_farbe`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
@@ -805,6 +814,23 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `reiter_zeichnen_passt_in_die_mindestbreite`). Prüfweg:
   `cargo test -p jjcad-core --test parallele` und `cargo test -p jjcad-gui tests_parallele`;
   Prüfbild `--demo "draw,parallele"`.
+- **Abrunden und Phase (T0247)**: Zwei Werkzeuge im Reiter „Ändern" (Gruppe
+  Geometrie) bearbeiten eine **Ecke aus zwei Linien**. Der Ablauf ist immer
+  derselbe: Klick auf die erste Linie, Klick auf die zweite (der Schnittpunkt
+  wird geprüft), dann das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
+  getippt + Enter. Die getippte Zahl **ist** das Maß (`Tool::obj2` schaltet den
+  Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem
+  Zeiger ankommt; der Punktweg hätte dort keine Richtung (T0236). Die Geometrie
+  steht **einmal** in `crates/jjcad-core/src/ecke.rs` (`ecke`, `anwenden`);
+  Klick (`canvas::ecke_setzen`), Vorschau (`draw_tool_preview`) und die Actions
+  `modify.fillet`/`modify.chamfer` rufen sie. Welcher Teil einer Linie stehen
+  bleibt, entscheidet die **Klickstelle** (`picks` im Befehl), ohne sie die
+  längere Seite. Das Verbindungsstück (Bogen bzw. Gerade) erbt Ebene und Stil
+  der ersten Linie; beide Linien werden gekürzt. Zu großes Maß, parallele
+  Linien und andere Objektarten sind Fehler (kein stiller Erfolg, T0038).
+  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (5 Tests) und
+  `cargo test -p jjcad-gui tests_ecke` (5 Tests); Prüfbilder `--demo abrunden`
+  und `--demo phase`.
 - **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
   Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
   `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende
@@ -819,7 +845,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
   (`pfad_verbinden`), sonst bleibt alles stehen und es gibt einen Fehler. Ein
   geschlossener Pfad umschließt eine **Fläche** (`pfad_flaeche`, Panel-Zeile „Fläche“);
-  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. Ribbon: Polylinie
+  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. **Laufrichtung
+  von Bögen (T0248)**: `PathSeg::Arc`/`EllipseArc` tragen `rev`; `a0`→`a1` ist
+  immer der geometrische Ausschnitt (Gegenuhrzeigersinn), `rev` sagt, ob das Stück
+  umgekehrt durchlaufen wird. Anfang und Ende eines Bogens dürfen **nie** durch
+  vertauschte Winkel ausgedrückt werden — das ergäbe den Gegenbogen (der Bogen
+  sprang beim Verbinden auf die andere Seite des Kreises). `PathSeg::reversed`
+  kippt nur `rev`, `start`/`end`/`flatten` werten es aus, gespiegelt wird es
+  mitgekippt. Ribbon: Polylinie
   und Pfad teilen sich eine geteilte Schaltfläche, sonst überschreitet der Reiter
   „Zeichnen“ die Mindestbreite. Prüfweg: `cargo test -p jjcad-core --test pfad` und
   `cargo test -p jjcad-gui tests_pfad`; Prüfbild `--demo "neudatei,pfad"`.
@@ -1095,24 +1128,29 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   **Achse** jeder Wand trifft, nicht der Abstand des Gehrungspunkts vom Knoten —
   sonst fiel sie bei kurzen Wänden aus (`h·√2` gegen Wandlänge).
 - **Keine Füllung von Wänden und Flächen (T0242)**: Wand, Füllfläche und Volumen lassen
-  sich **ohne** Füllfläche zeichnen. Gespeichert ist das im eigenen Feld
+  sich **ohne Flächenton** zeichnen. Gespeichert ist das im eigenen Feld
   `EntityStyle::no_fill` (Vorgabe `false`, `skip_serializing_if`) — nicht als Sonderfarbe,
   weil „keine Füllfarbe“ etwas anderes ist: ohne Farbe zeichnet eine Wand den Vorgabeton
-  (`WALL_FILL_MIX`) und eine Vollfläche die aufgehellte Linienfarbe. Gelesen wird das Feld an
-  **zwei** Stellen: `render::render_wall` (keine Fläche, kein Muster, nur Kanten) und
-  `render::render_fill` (keine Fläche, kein Muster, nur die Umrandung, wenn `border` an ist).
+  (`WALL_FILL_MIX`) und eine Vollfläche die aufgehellte Linienfarbe. **Das Feld nimmt nur den
+  Flächenton weg, nicht das Muster** (Turn 2, vom Nutzer gefordert): eine Fläche darf eine
+  Schraffur ohne Hintergrundfläche tragen. Gelesen wird es an **zwei** Stellen:
+  `render::render_wall` (keine Füllfläche, Schraffur bleibt) und `render::render_fill` (die
+  Fläche entfällt, `push_muster` und die Umrandung laufen weiter). Wer dort wieder Muster und
+  Ton gemeinsam abschaltet, bricht `flaeche_ohne_fuellung_behaelt_das_muster`.
   Geschrieben über `modify.set` und die Erzeuger mit dem Parameter `fill`:
   `actions::fuellung_aus_params` ist die eine Auswertung — Farbwert = Farbe (und Fläche ein),
-  `none`/`bylayer` = nur die Farbe zurücknehmen (Standard), `keine`/`ohne`/`aus` = Fläche ganz
+  `none`/`bylayer` = nur die Farbe zurücknehmen (Standard), `keine`/`ohne`/`aus` = Flächenton
   aus, `standard`/`vorgabe` = Abschalten zurücknehmen. Die Oberfläche wählt dreistufig
-  (`style::Fuellung` + `panels::fuellung_combo`, gemeinsam mit `panels::color_combo` über
-  `farb_palette`): „Keine Füllung“ · „Standard“ (beim Volumen „Wandton“) · Farbe; ein
-  gewähltes **Muster** schaltet die Füllung wieder ein. Die Vorschau geht denselben Weg
+  (`style::Fuellung` + `panels::fuellung_combo` / `panels::fuellung_menue`, gemeinsam mit
+  `panels::color_combo` über `farb_palette`): **„Standard“ zuerst**, darunter „Keine Füllung“,
+  dann die Farben — beim Volumen heißt der Standardwert „Wandton“. Muster und Fläche sind
+  unabhängig. Die Vorschau geht denselben Weg
   (`PendingStyle::no_fill` → `canvas::run_mit_meldung` als `fill: "keine"`,
   Einfüge-Vorschau in `canvas::draw_fill_ghost`). Prüfweg:
-  `cargo test -p jjcad-core --test keine_fuellung` (10 Tests, darunter das PNG-Maß) und
-  `cargo test -p jjcad-gui keine_fuellung` (2 Tests: Panelanzeige und Erzeugerpfad).
-  Prüfbild `--demo flaeche` bzw. `--demo wandpanel`.
+  `cargo test -p jjcad-core --test keine_fuellung` (12 Tests, darunter das PNG-Maß und die
+  Schraffur ohne Ton) und `cargo test -p jjcad-gui keine_fuellung` bzw.
+  `cargo test -p jjcad-gui tests_fuellung` (Panelanzeige, Erzeugerpfad, Reihenfolge im Menü).
+  Prüfbilder `--demo ohnefuellung` und `--demo flaecheohnefuellung`.
 - **Bilder sind nur an den Kanten anklickbar (T0201)**: Ein Bild hat keine
   Anklickfläche in der Mitte — der Zeiger über der Fläche höbe es sonst hervor,
   und über einem Bild ließe sich nicht zeichnen. `snap::hit_test` prüft für

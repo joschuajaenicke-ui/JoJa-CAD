@@ -193,3 +193,190 @@ fn verbinden_braucht_zwei_objekte() {
     }));
     assert!(actions::execute(&mut doc, "path.connect", &json!({"ids": [a]})).is_err());
 }
+
+/// T0248: Hängt die Linie am **Ende** des Bogens, muss das Bogenstück
+/// umgedreht werden. Dabei darf der Bogen nicht auf die andere Seite des
+/// Kreises springen (früher wurden dafür die Winkel vertauscht, was den
+/// Gegenbogen ergibt).
+#[test]
+fn verbinden_dreht_den_bogen_ohne_gegenbogen() {
+    let mut doc = doc_mm();
+    let layer = doc.current_layer;
+    // Viertelkreis um (1000; 0) von (0; 0) nach (1000; -1000); die Linie
+    // endet genau am Bogenende.
+    let bogen = doc.new_id();
+    doc.add_entity(Entity::new(
+        bogen,
+        layer,
+        EntityKind::Arc {
+            c: v(1000.0, 0.0),
+            r: 1000.0,
+            a0: std::f64::consts::PI,
+            a1: 3.0 * std::f64::consts::PI / 2.0,
+        },
+    ));
+    let linie = doc.new_id();
+    doc.add_entity(Entity::new(
+        linie,
+        layer,
+        EntityKind::Line {
+            a: v(2000.0, -1000.0),
+            b: v(1000.0, -1000.0),
+        },
+    ));
+    let antwort = actions::execute(&mut doc, "path.connect", &json!({"ids": [linie, bogen]}))
+        .expect("verbinden");
+    let neu = antwort["created"][0].as_u64().expect("Kennung");
+    let (segs, _) = pfad(&doc, neu);
+    assert_eq!(segs.len(), 2, "{segs:?}");
+    assert!(segs[1].start().dist(v(1000.0, -1000.0)) < 1e-6, "Anfang am Linienende");
+    assert!(segs[1].end().dist(v(0.0, 0.0)) < 1e-6, "Ende am alten Bogenanfang");
+    match &segs[1] {
+        PathSeg::Arc { r, a0, a1, rev, .. } => {
+            assert!((*r - 1000.0).abs() < 1e-9);
+            assert!((*a0 - std::f64::consts::PI).abs() < 1e-9, "Ausschnitt bleibt");
+            assert!((*a1 - 3.0 * std::f64::consts::PI / 2.0).abs() < 1e-9, "Ausschnitt bleibt");
+            assert!(*rev, "umgedrehte Laufrichtung");
+        }
+        other => panic!("kein Bogen: {other:?}"),
+    }
+    // Alle Punkte liegen auf demselben Viertelkreis wie vorher (unten rechts),
+    // nicht auf dem Gegenbogen (oben rechts).
+    for p in segs[1].flatten(0.5) {
+        assert!((p.dist(v(1000.0, 0.0)) - 1000.0).abs() < 5.0, "nicht auf dem Kreis: {p:?}");
+        assert!(p.y <= 0.5, "Gegenbogen statt Viertelkreis: {p:?}");
+        assert!(p.x >= -0.5 && p.x <= 2000.5, "seitlich des Viertels: {p:?}");
+    }
+    let len = segs[0].len() + segs[1].len();
+    assert!((len - (1000.0 + std::f64::consts::FRAC_PI_2 * 1000.0)).abs() < 1.0,
+        "Länge {len}");
+    // Anfang und Ende der Kette sind in Laufrichtung verbunden.
+    assert!(segs[0].end().dist(segs[1].start()) < 1e-6);
+}
+
+/// Dasselbe für den Ellipsenbogen.
+#[test]
+fn verbinden_dreht_den_ellipsenbogen_ohne_gegenbogen() {
+    let mut doc = doc_mm();
+    let layer = doc.current_layer;
+    // Viertel einer Ellipse um (1000; 0), rx = 1000, ry = 500, von (0; 0)
+    // nach (1000; 500) — Parameter 180° bis 90° abwärts heißt: Ausschnitt
+    // läuft CCW von 180° nach 270°? Nein: hier von 90° nach 180°.
+    let bogen = doc.new_id();
+    doc.add_entity(Entity::new(
+        bogen,
+        layer,
+        EntityKind::EllipseArc {
+            c: v(1000.0, 0.0),
+            rx: 1000.0,
+            ry: 500.0,
+            rot: 0.0,
+            a0: 0.0,
+            a1: std::f64::consts::FRAC_PI_2,
+        },
+    ));
+    let ende = v(1000.0, 500.0);
+    let start = v(2000.0, 0.0);
+    let linie = doc.new_id();
+    doc.add_entity(Entity::new(
+        linie,
+        layer,
+        EntityKind::Line {
+            a: v(1000.0, 1500.0),
+            b: ende,
+        },
+    ));
+    let antwort = actions::execute(&mut doc, "path.connect", &json!({"ids": [linie, bogen]}))
+        .expect("verbinden");
+    let neu = antwort["created"][0].as_u64().expect("Kennung");
+    let (segs, _) = pfad(&doc, neu);
+    assert_eq!(segs.len(), 2);
+    assert!(segs[1].start().dist(ende) < 1e-6, "Anfang am Linienende");
+    assert!(segs[1].end().dist(start) < 1e-6, "Ende am alten Bogenanfang");
+    match &segs[1] {
+        PathSeg::EllipseArc { rev, .. } => assert!(*rev, "umgedrehte Laufrichtung"),
+        other => panic!("kein Ellipsenbogen: {other:?}"),
+    }
+    // Alle Punkte liegen auf demselben Viertel der Ellipse (rechts oben),
+    // nicht auf dem Gegenbogen.
+    for p in segs[1].flatten(0.5) {
+        let dx = (p.x - 1000.0) / 1000.0;
+        let dy = p.y / 500.0;
+        assert!((dx * dx + dy * dy - 1.0).abs() < 0.02, "nicht auf der Ellipse: {p:?}");
+        assert!(p.y >= -0.5 && dx >= -0.02, "Gegenbogen statt Viertel: {p:?}");
+    }
+}
+
+/// Alte Dateien kennen kein `rev` — der Bogen bleibt dann in seiner
+/// gespeicherten Laufrichtung (`a0`→`a1`).
+#[test]
+fn pfadstueck_liest_alte_dateien_ohne_rev() {
+    let alt: PathSeg = serde_json::from_str(
+        r#"{"art":"arc","c":{"x":0.0,"y":0.0},"r":100.0,"a0":0.0,"a1":1.5}"#,
+    )
+    .expect("alter Bogen");
+    match alt {
+        PathSeg::Arc { rev, .. } => assert!(!rev, "Vorgabe: nicht umgedreht"),
+        other => panic!("kein Bogen: {other:?}"),
+    }
+    let umgedreht = PathSeg::Arc {
+        c: v(0.0, 0.0),
+        r: 100.0,
+        a0: 0.0,
+        a1: 1.5,
+        rev: true,
+    };
+    let text = serde_json::to_string(&umgedreht).expect("schreiben");
+    assert!(text.contains("\"rev\":true"), "{text}");
+    let zurueck: PathSeg = serde_json::from_str(&text).expect("lesen");
+    assert_eq!(zurueck, umgedreht);
+    let gerade = PathSeg::Arc {
+        c: v(0.0, 0.0),
+        r: 100.0,
+        a0: 0.0,
+        a1: 1.5,
+        rev: false,
+    };
+    assert!(!serde_json::to_string(&gerade).expect("schreiben").contains("rev"),
+        "die Vorgabe wird nicht mitgeschrieben");
+}
+
+/// Spiegeln eines Pfades kehrt die Laufrichtung um, der Bogen bleibt aber auf
+/// seiner Seite (T0248): Anfang und Ende sind gespiegelt, der Ausschnitt ist
+/// derselbe gespiegelte.
+#[test]
+fn spiegeln_kehrt_die_laufrichtung_des_bogens() {
+    use jjcad_core::geom::Affine;
+    use jjcad_core::transform::transform_kind;
+    let bogen = PathSeg::Arc {
+        c: v(1000.0, 0.0),
+        r: 1000.0,
+        a0: std::f64::consts::PI,
+        a1: 3.0 * std::f64::consts::PI / 2.0,
+        rev: true,
+    };
+    let vorher_start = bogen.start();
+    let vorher_ende = bogen.end();
+    // Spiegeln an der y-Achse (x → −x).
+    let m = Affine::mirror(v(0.0, 0.0), v(0.0, 1.0));
+    let gespiegelt = transform_kind(
+        &EntityKind::Path {
+            segments: vec![bogen.clone()],
+            closed: false,
+        },
+        &m,
+    );
+    let EntityKind::Path { segments, .. } = gespiegelt else {
+        panic!("kein Pfad");
+    };
+    let s = &segments[0];
+    // Der Weg kehrt sich beim Spiegeln um: aus „von a1 nach a0" wird „von a0
+    // nach a1" (der gespiegelte Anfang ist der alte Anfang).
+    match s {
+        PathSeg::Arc { rev, .. } => assert!(!*rev, "gespiegelt läuft der Bogen andersherum"),
+        other => panic!("kein Bogen: {other:?}"),
+    }
+    assert!(s.start().dist(v(-vorher_start.x, vorher_start.y)) < 1e-6, "Anfang gespiegelt");
+    assert!(s.end().dist(v(-vorher_ende.x, vorher_ende.y)) < 1e-6, "Ende gespiegelt");
+    assert!((s.len() - bogen.len()).abs() < 1e-6, "Länge bleibt");
+}

@@ -1604,8 +1604,8 @@ pub fn wand(app: &mut App, ui: &mut Ui, ziel: Ziel) {
         } else {
             Some(hp)
         };
-        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
-        kein_fill = false;
+        // Muster und Fläche sind getrennt (T0242): „Keine Füllung“ nimmt nur
+        // den Flächenton weg, das Muster bleibt.
     }
 
     zeile("fuellfarbe");
@@ -2215,8 +2215,8 @@ pub fn fuellflaeche(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     if let Some(v) = picked {
         muster = v;
-        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
-        kein_fill = false;
+        // Muster und Fläche sind getrennt (T0242): „Keine Füllung“ nimmt nur
+        // den Flächenton weg, das Muster bleibt.
     }
 
     zeile("winkel");
@@ -3855,8 +3855,8 @@ pub fn volumen(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     });
     if let Some(v) = picked {
         muster = v;
-        // Ein Muster ist eine Füllung — „Keine Füllung“ endet damit (T0242).
-        kein_fill = false;
+        // Muster und Fläche sind getrennt (T0242): „Keine Füllung“ nimmt nur
+        // den Flächenton weg, das Muster bleibt.
     }
     zeile("winkel");
     widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {

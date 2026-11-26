@@ -50,15 +50,24 @@ fn ohne_farbe(doc: &mut Document) -> Vec<Entity> {
     ]
 }
 
-/// Ein Neudokument zeichnet auf „Wände“; die Bemaßungsebene selbst ist rot.
+/// Ein Neudokument zeichnet auf „Wände“; die Bemaßungsebene trägt hier
+/// ausdrücklich ein Rot (T0249: die Vorgabe ist inzwischen Schwarz — der
+/// Sonderfall bleibt trotzdem nötig, weil eine Zeichnung ihre Ebenenfarbe
+/// mitbringt und eine ältere Datei sie rot in der Datei stehen hat).
 /// Trotzdem ist jedes neue Maß **schwarz**.
 #[test]
 fn neue_bemassung_ist_schwarz() {
     let mut doc = Document::new();
+    let rot_id = doc
+        .layer_id_by_name("Beschriftung")
+        .expect("Ebene „Beschriftung“ fehlt");
+    if let Some(l) = doc.layer_mut(rot_id) {
+        l.color = Color::RED;
+    }
     let rot = doc
         .layer_by_name("Beschriftung")
         .map(|l| l.color)
-        .expect("Ebene „Bemaßung“ fehlt");
+        .expect("Ebene „Beschriftung“ fehlt");
     assert_ne!(rot, Color::BLACK, "Ausgangslage: die Ebene trägt Rot");
 
     let erzeugt = ohne_farbe(&mut doc);

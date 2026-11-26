@@ -2217,36 +2217,22 @@ pub fn render_fill(
         .collect();
     let scale = xf.scale_factor().abs().max(1e-6);
 
-    // „Keine Füllung“ (T0242): weder Fläche noch Muster — nur die Umrandung.
-    if e.style.no_fill {
-        if border {
-            dl.push(Prim {
-                shape: Shape::Poly(pts.clone(), true),
-                style: PrimStyle { fill: None, ..*st },
-                entity: e.id,
-                layer: e.layer,
-            });
-            for h in &loecher {
-                dl.push(Prim {
-                    shape: Shape::Poly(h.clone(), true),
-                    style: PrimStyle { fill: None, ..*st },
-                    entity: e.id,
-                    layer: e.layer,
-                });
-            }
-        }
-        return;
-    }
-
     // Fläche: eine gesetzte Füllfarbe gewinnt immer. Ohne sie wird nur bei
     // Vollfläche aufgehellt — ein Muster mit Flächenfarbe bleibt sonst ein
     // grauer Kasten unter den Linien.
-    let area = match (pattern, e.style.fill) {
-        (_, Some(c)) => Some(c),
-        (FillPattern::Solid, None) => {
-            Some(shade.unwrap_or_else(|| st.color.mix(Color::WHITE, 0.72)))
+    //
+    // „Keine Füllung“ (T0242) nimmt **nur den Flächenton** weg: das Muster
+    // bleibt, eine Schraffur also ohne Hintergrundfläche.
+    let area = if e.style.no_fill {
+        None
+    } else {
+        match (pattern, e.style.fill) {
+            (_, Some(c)) => Some(c),
+            (FillPattern::Solid, None) => {
+                Some(shade.unwrap_or_else(|| st.color.mix(Color::WHITE, 0.72)))
+            }
+            _ => None,
         }
-        _ => None,
     };
     if let Some(c) = area {
         dl.push(Prim {
@@ -3511,7 +3497,9 @@ fn render_path(
                 entity: e.id,
                 layer: e.layer,
             }),
-            crate::pfad::PathSeg::Arc { c, r, a0, a1 } => {
+            // Die Laufrichtung (`rev`) ist für das Bild unerheblich: gezeichnet
+            // wird der Ausschnitt zwischen `a0` und `a1`.
+            crate::pfad::PathSeg::Arc { c, r, a0, a1, .. } => {
                 let (aa, ab) = if mirror { (-*a1, -*a0) } else { (*a0, *a1) };
                 dl.push(Prim {
                     shape: Shape::Arc {
@@ -3532,6 +3520,7 @@ fn render_path(
                 rot: er,
                 a0,
                 a1,
+                ..
             } => {
                 let (aa, ab, r) = if mirror {
                     (-*a1, -*a0, rot - *er)
@@ -3751,6 +3740,7 @@ fn render_wall(
     //
     //    „Keine Füllung“ (T0242) lässt Fläche **und** Muster weg: eine Wand
     //    ohne Schraffur und ohne Ton ist nur ihre Umrandung.
+    // „Keine Füllung“ nimmt nur den Flächenton weg — die Schraffur bleibt.
     let ohne = e.style.no_fill;
     if !ohne {
         for poly in &body.fills {
@@ -3771,7 +3761,7 @@ fn render_wall(
     //    sehen (breitenabhängig getastet) oder unterpixelbreit und wurde von
     //    der GUI verworfen — beides erzeugte den Haarstrich.
     // 3. Schraffur der Wandfläche
-    if let Some(hp) = hatch.filter(|_| !ohne) {
+    if let Some(hp) = hatch {
         push_wall_hatch(dl, e, st, hp, body, thickness, xf);
     }
     // 4. Umrandung: nur die Randstücke, deren Außenseite frei ist. Ein Stück,
