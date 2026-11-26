@@ -288,6 +288,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
   `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
   und `cargo test -p jjcad-core --test massketten_farbe`.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel
+  ist **ein** Dropdown mit zwei Abschnitten — oben jeder Layername **einmal**, darunter
+  die Pläne (`props::ebene_dropdown`). Das Feld nennt den gemeinsamen Plan und meldet
+  abweichende Layer als `*variiert*`; liegen die Objekte in verschiedenen Plänen, steht
+  dort `*variiert*`. Zwei getrennte Aufträge an die Befehlsschicht, beide über
+  `modify.set`: `layer_name` setzt diesen Namen im Plan **jedes** Objekts, `plan`
+  verschiebt auf denselben Layernamen im Zielplan (`actions.rs` rechnet die Ziellayer je
+  Objekt vorab, `ensure_layer_in` legt fehlende an). Nur so verschieben sich mehrere
+  Objekte verschiedener Layer gemeinsam auf einen anderen Plan, ohne ihre
+  Layerstruktur zu verlieren. Ältere Einträge der Liste („Plan · Layer“) gibt es nicht
+  mehr. Prüfweg: `cargo test -p jjcad-core --test layer_plan` und
+  `cargo test -p jjcad-gui tests_layer_plan`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die

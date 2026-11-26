@@ -561,6 +561,13 @@ ausgeblendet.
   Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
   Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
   Farbpunkt im Layer-Manager.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel ist **ein**
+  Dropdown mit **zwei Abschnitten**: oben jeder Layername **einmal**, darunter die Pläne. Ein Klick
+  auf einen Layernamen setzt diesen Layer im Plan **jedes** gewählten Objekts; ein Klick auf einen
+  Plan verschiebt alle gewählten Objekte dorthin und behält ihren Layernamen bei — ein Text bleibt
+  auf „Beschriftung“, eine Linie auf „Zeichnung“. Liegen die Objekte im selben Plan, nennt das Feld
+  den Plan und meldet abweichende Layer als `*variiert*` („Plan 1 · *variiert*“); liegen sie in
+  verschiedenen Plänen, steht dort `*variiert*`.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

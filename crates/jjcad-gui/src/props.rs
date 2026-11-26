@@ -363,10 +363,29 @@ fn linienwerte(
     }
 }
 
+/// Ein Auftrag an die Befehlsschicht aus der Zeile „Layer“ (T0245).
+///
+/// Der Layer und der Plan eines Objekts standen bisher in **einem** Eintrag
+/// („Plan · Layer“) — bei mehreren Plänen wuchs die Liste mit jeder
+/// Plan-Layer-Kombination, und mehrere Objekte auf verschiedenen Layern ließen
+/// sich nicht gemeinsam auf einen anderen Plan verschieben. Jetzt sind es zwei
+/// Abschnitte im selben Dropdown: ein Layername gilt im Plan **jedes**
+/// Objekts, ein Planwechsel behält den **Layernamen** bei.
+#[derive(Clone, Debug, PartialEq)]
+pub enum EbenenZiel {
+    /// Dieser Layername, gesucht im Plan jedes gewählten Objekts.
+    Layer(String),
+    /// Dieser Plan; die Objekte behalten ihren Layernamen. `name` ist der
+    /// Name beim Erzeugen (dort gibt es noch kein Objekt, aus dem er käme).
+    Plan { plan: Id, name: Option<String> },
+}
+
 /// Änderungen der gemeinsamen Zeilen — anwendbar auf Vorgaben oder Objekt.
 #[derive(Default)]
 pub struct Gemein {
-    pub layer: Option<Id>,
+    /// Neue Ebene bzw. neuer Plan (T0245) — zwei getrennte Aufträge an die
+    /// Befehlsschicht, obwohl sie in **einem** Dropdown stehen.
+    pub ebene: Option<EbenenZiel>,
     pub farbe: Option<Option<Color>>,
     pub staerke: Option<f64>,
     pub linientyp: Option<jjcad_core::style::LineType>,
@@ -404,6 +423,53 @@ fn daemmung_werte(app: &App, ziel: Ziel) -> (f64, f64) {
 /// `mit_linie` ist für Text `false` — ein Text hat keine Linie; die Zeilen
 /// Stärke und Linientyp erscheinen dann in **beiden** Fällen nicht.
 #[allow(clippy::too_many_arguments)]
+/// Dropdown „Layer“ mit **zwei Abschnitten** (T0245): oben jeder Layername
+/// einmal, darunter die Pläne. Beide Abschnitte stehen im selben Menü, sind
+/// aber getrennte Aufträge: ein Layername gilt im Plan jedes Objekts, ein
+/// Planwechsel behält den Layernamen bei.
+///
+/// `aktueller_name` ist `None`, sobald die Layer der Auswahl auseinandergehen
+/// — dann zeigt der Abschnitt „Layer“ keinen Haken, der Plan darunter aber
+/// weiter den gemeinsamen Plan.
+fn ebene_dropdown(
+    ui: &mut Ui,
+    salt: &str,
+    beschriftung: &str,
+    namen: &[String],
+    plaene: &[(Id, String)],
+    aktueller_name: Option<&str>,
+    aktuelle_plaene: &[Id],
+    name_fuer_plan: &str,
+) -> Option<EbenenZiel> {
+    panels::dropdown(ui, salt, beschriftung, None, |ui| {
+        let mut out = None;
+        ui.add_space(2.0);
+        ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.layer"), 11.0));
+        for name in namen {
+            let sel = aktueller_name
+                .map(|a| a.eq_ignore_ascii_case(name))
+                .unwrap_or(false);
+            if ui.selectable_label(sel, name).clicked() {
+                out = Some(EbenenZiel::Layer(name.clone()));
+            }
+        }
+        ui.add_space(6.0);
+        widgets::hline(ui);
+        ui.add_space(4.0);
+        ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.plan"), 11.0));
+        for (pid, pname) in plaene {
+            let sel = aktuelle_plaene.contains(pid);
+            if ui.selectable_label(sel, pname).clicked() {
+                out = Some(EbenenZiel::Plan {
+                    plan: *pid,
+                    name: Some(name_fuer_plan.to_string()),
+                });
+            }
+        }
+        out
+    })
+}
+
 pub fn gemein(
     app: &App,
     ui: &mut Ui,
@@ -459,49 +525,86 @@ pub fn gemein(
                 .unwrap_or(false)
         });
 
-    // Layer
+    // Layer und Plan — **ein** Dropdown mit zwei Abschnitten (T0245).
     zeile("layer");
-    // T0202: Bei mehreren Plänen tragen mehrere Layer denselben Namen —
-    // die Auswahl nennt deshalb den Plan mit.
-    let mehrere_plaene = app.doc().plans.len() > 1;
-    let layer_items: Vec<(Id, String)> = app
-        .doc()
-        .layers
-        .iter()
-        .map(|l| {
-            let name = if mehrere_plaene {
-                match app.doc().plan(l.plan) {
-                    Some(p) => format!("{} · {}", p.name, l.name),
-                    None => l.name.clone(),
+    // Die Pläne, in denen die gewählten Objekte liegen; beim Erzeugen der Plan
+    // der Zielebene. Nur dieser Plan steht im Feld, solange er für alle gilt.
+    let plangeber: Vec<Id> = if viele.is_empty() {
+        app.doc()
+            .plan_of_layer(layer)
+            .map(|p| p.id)
+            .into_iter()
+            .collect()
+    } else {
+        let mut liste: Vec<Id> = Vec::new();
+        for id in &viele {
+            let plan = app
+                .doc()
+                .entity(*id)
+                .and_then(|e| app.doc().plan_of_layer(e.layer))
+                .map(|p| p.id);
+            if let Some(pid) = plan {
+                if !liste.contains(&pid) {
+                    liste.push(pid);
                 }
-            } else {
-                l.name.clone()
-            };
-            (l.id, name)
-        })
-        .collect();
-    let mut new_layer = layer;
-    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.layer"), |ui| {
-        let gewaehlt = if gleich_layer {
-            panels::pick_combo(ui, &ziel.salt("layer"), new_layer, &layer_items)
-        } else {
-            // verschiedene Layer: Feld zeigt *variiert*, Auswahl setzt alle
-            panels::dropdown(ui, &ziel.salt("layer"), "*variiert*", None, |ui| {
-                let mut out = None;
-                for (id, name) in &layer_items {
-                    if ui.selectable_label(false, name).clicked() {
-                        out = Some(*id);
-                    }
-                }
-                out
-            })
-        };
-        if let Some(l) = gewaehlt {
-            new_layer = l;
+            }
         }
+        liste
+    };
+    let gleich_plan = plangeber.len() <= 1;
+    let layer_name = app
+        .doc()
+        .layer(layer)
+        .map(|l| l.name.clone())
+        .unwrap_or_default();
+    let plan_name = plangeber
+        .first()
+        .and_then(|p| app.doc().plan(*p))
+        .map(|p| p.name.clone());
+    // Das Feld nennt den Plan immer mit — so ist auch bei verschiedenen Layern
+    // sichtbar, dass beide Objekte im selben Plan liegen.
+    let beschriftung = if !gleich_plan {
+        "*variiert*".to_string()
+    } else {
+        match &plan_name {
+            Some(p) if gleich_layer => format!("{p} · {layer_name}"),
+            Some(p) => format!("{p} · *variiert*"),
+            None if gleich_layer => layer_name.clone(),
+            None => "*variiert*".to_string(),
+        }
+    };
+    // Oben jeder Layername **einmal** (in Zeichenreihenfolge der Datei).
+    let mut namen: Vec<String> = Vec::new();
+    for l in &app.doc().layers {
+        if !namen.iter().any(|n| n.eq_ignore_ascii_case(&l.name)) {
+            namen.push(l.name.clone());
+        }
+    }
+    let plaene: Vec<(Id, String)> = app
+        .doc()
+        .plans
+        .iter()
+        .map(|p| (p.id, p.name.clone()))
+        .collect();
+    let mut wahl: Option<EbenenZiel> = None;
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.layer"), |ui| {
+        wahl = ebene_dropdown(
+            ui,
+            &ziel.salt("layer"),
+            &beschriftung,
+            &namen,
+            &plaene,
+            if gleich_layer {
+                Some(layer_name.as_str())
+            } else {
+                None
+            },
+            &plangeber,
+            &layer_name,
+        );
     });
-    if new_layer != layer {
-        out.layer = Some(new_layer);
+    if let Some(w) = wahl {
+        out.ebene = Some(w);
     }
 
     // Farbe
@@ -584,10 +687,46 @@ pub fn gemein(
 
 /// Gemeinsame Zeilen auf die Vorgaben anwenden (Erzeugen).
 pub fn gemein_nach_optionen(app: &mut App, a: &Gemein) {
-    if let Some(l) = a.layer {
+    if let Some(z) = &a.ebene {
         // T0202: Die Wahl im Panel ist die Ziel-Ebene des nächsten Elements —
         // sie verschiebt nicht mehr die „aktuelle Ebene“ (die folgt dem Typ).
-        app.ui.pending.layer = Some(l);
+        // T0245: Layername und Plan sind getrennt; beide enden in einer
+        // konkreten Ebene des Zielplans.
+        let plan = app
+            .doc()
+            .aktueller_plan()
+            .or_else(|| app.doc().plans.first().map(|p| p.id))
+            .unwrap_or(0);
+        let (name, farbe) = match z {
+            EbenenZiel::Layer(name) => (
+                name.clone(),
+                app.doc()
+                    .layers
+                    .iter()
+                    .find(|l| l.plan == plan && l.name.eq_ignore_ascii_case(name))
+                    .map(|l| l.color)
+                    .unwrap_or(Color::BLACK),
+            ),
+            EbenenZiel::Plan { plan, name } => {
+                let plan = *plan;
+                let name = name.clone().unwrap_or_else(|| {
+                    app.doc()
+                        .layer(app.doc().current_layer)
+                        .map(|l| l.name.clone())
+                        .unwrap_or_default()
+                });
+                let farbe = app
+                    .doc()
+                    .layers
+                    .iter()
+                    .find(|l| l.plan == plan && l.name.eq_ignore_ascii_case(&name))
+                    .map(|l| l.color)
+                    .unwrap_or(Color::BLACK);
+                (name, farbe)
+            }
+        };
+        let lid = app.doc_mut().ensure_layer_in(&name, farbe, plan);
+        app.ui.pending.layer = Some(lid);
     }
     if let Some(v) = a.farbe {
         app.ui.pending.color = v;
@@ -610,8 +749,17 @@ pub fn gemein_nach_optionen(app: &mut App, a: &Gemein) {
 pub fn gemein_nach_objekt(app: &mut App, id: Id, a: &Gemein) {
     let mut params = serde_json::json!({"ids": [id]});
     if let Some(map) = params.as_object_mut() {
-        if let Some(l) = a.layer {
-            map.insert("layer".into(), serde_json::json!(l));
+        if let Some(z) = &a.ebene {
+            // T0245: Die Befehlsschicht löst den Namen je Objekt auf — so
+            // behalten mehrere Objekte auf verschiedenen Layern ihre Struktur.
+            match z {
+                EbenenZiel::Layer(name) => {
+                    map.insert("layer_name".into(), serde_json::json!(name));
+                }
+                EbenenZiel::Plan { plan, .. } => {
+                    map.insert("plan".into(), serde_json::json!(plan));
+                }
+            }
         }
         if let Some(v) = a.farbe {
             map.insert(
@@ -7149,5 +7297,212 @@ mod tests_ansichtsfenster_layer {
             app.doc().layers.len() - 1,
             "nur ein Layer darf fehlen: {wahl:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod tests_layer_plan {
+    //! T0245: Layer und Plan sind zwei Abschnitte in **einem** Dropdown.
+    //!
+    //! Abnahme aus dem Ticket: Linie (Zeichnung) und Text (Beschriftung) im
+    //! Plan 1 — bei gemeinsamer Auswahl steht „Plan 1 · *variiert*“ im Feld,
+    //! und ein Klick auf „Plan 2“ verschiebt beide, jeder auf seinen Layer.
+
+    use super::*;
+    use serde_json::json;
+
+    fn app_mit_linie_und_text() -> (App, Id, Id, Id) {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.session_mut()
+            .execute("doc.settings", &json!({ "input_unit": "m" }))
+            .expect("Einheit");
+        let linie = app
+            .session_mut()
+            .execute("draw.line", &json!({"a": [0.0, 0.0], "b": [4.0, 0.0]}))
+            .expect("Linie")["created"][0]
+            .as_u64()
+            .expect("Linien-Id") as Id;
+        let text = app
+            .session_mut()
+            .execute(
+                "draw.text",
+                &json!({"p": [1.0, 1.0], "text": "Hallo", "height": 0.35}),
+            )
+            .expect("Text")["created"][0]
+            .as_u64()
+            .expect("Text-Id") as Id;
+        let plan2 = app
+            .session_mut()
+            .execute("plan.create", &json!({"name": "Plan 2"}))
+            .expect("Plan 2")["id"]
+            .as_u64()
+            .expect("Plan-Id") as Id;
+        (app, linie, text, plan2)
+    }
+
+    fn bild(app: &mut App, ereignisse: Vec<egui::Event>, zeit: f64) -> egui::FullOutput {
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::Vec2::new(1200.0, 950.0),
+            )),
+            time: Some(zeit),
+            predicted_dt: 0.016,
+            events: ereignisse,
+            ..Default::default()
+        };
+        app.ctx.clone().run(raw, |ctx| {
+            egui::SidePanel::right("eigenschaften")
+                .exact_width(280.0)
+                .show(ctx, |ui| crate::panels::properties(app, ui));
+        })
+    }
+
+    /// Alle gemalten Texte mit ihrer Fläche — auch die im aufgeklappten Menü.
+    fn texte(out: &egui::FullOutput) -> Vec<(String, egui::Rect)> {
+        fn lauf(s: &egui::Shape, acc: &mut Vec<(String, egui::Rect)>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let r = t.galley.rect.translate(t.pos.to_vec2());
+                    acc.push((t.galley.text().to_string(), r));
+                }
+                egui::Shape::Vec(list) => {
+                    for s in list {
+                        lauf(s, acc);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let mut acc = Vec::new();
+        for cs in &out.shapes {
+            lauf(&cs.shape, &mut acc);
+        }
+        acc
+    }
+
+    fn flaeche(out: &egui::FullOutput, text: &str) -> egui::Rect {
+        texte(out)
+            .into_iter()
+            .find(|(t, _)| t.trim() == text)
+            .unwrap_or_else(|| {
+                let alle: Vec<String> = texte(out).into_iter().map(|(t, _)| t).collect();
+                panic!("Text „{text}“ nicht im Panel: {alle:?}")
+            })
+            .1
+    }
+
+    fn knopf(pos: egui::Pos2, pressed: bool) -> egui::Event {
+        egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        }
+    }
+
+    fn klick(app: &mut App, ziel: egui::Pos2, zeit: f64) {
+        let _ = bild(app, vec![egui::Event::PointerMoved(ziel)], zeit);
+        let _ = bild(app, vec![knopf(ziel, true)], zeit + 0.05);
+        let _ = bild(app, vec![knopf(ziel, false)], zeit + 0.1);
+        let _ = bild(app, Vec::new(), zeit + 0.15);
+    }
+
+    fn layername(app: &App, id: Id) -> String {
+        app.doc()
+            .layer(app.doc().entity(id).expect("Objekt").layer)
+            .expect("Layer")
+            .name
+            .clone()
+    }
+
+    /// Das Feld nennt den gemeinsamen Plan und meldet die Layer als variiert;
+    /// das Menü listet jeden Layernamen **einmal** und darunter die Pläne.
+    #[test]
+    fn feld_zeigt_plan_und_variierte_layer() {
+        let (mut app, linie, text, _plan2) = app_mit_linie_und_text();
+        app.session_mut().select(vec![linie, text]);
+        let out = bild(&mut app, Vec::new(), 1.0);
+        // Die Beschriftung des Felds — der Plan steht darin, der Layer variiert.
+        let feld = flaeche(&out, "Plan 1 · *variiert*");
+
+        // Menü öffnen: beide Abschnitte sichtbar, jeder Layername einmal.
+        klick(&mut app, feld.center(), 2.0);
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let alle: Vec<String> = texte(&out).into_iter().map(|(t, _)| t).collect();
+        for name in ["Zeichnung", "Architektur", "Beschriftung", "Blöcke"] {
+            assert_eq!(
+                alle.iter().filter(|t| t.trim() == name).count(),
+                1,
+                "Layer „{name}“ steht nicht genau einmal im Menü: {alle:?}"
+            );
+        }
+        assert!(
+            alle.iter().any(|t| t.trim() == "Plan 2"),
+            "Plan 2 fehlt im Menü: {alle:?}"
+        );
+        // Abschnittsüberschriften „Layer“ und „Plan“ — „Plan 1“ gibt es nicht.
+        assert!(alle.iter().any(|t| t.trim() == "Layer"), "Abschnitt Layer fehlt");
+        assert!(alle.iter().any(|t| t.trim() == "Plan"), "Abschnitt Plan fehlt");
+    }
+
+    /// Abnahmefall aus dem Ticket: Klick auf „Plan 2“ verschiebt beide
+    /// Objekte, der Text auf „Beschriftung“, die Linie auf „Zeichnung“.
+    #[test]
+    fn planwahl_verschiebt_alle_objekte_und_behaelt_den_layer() {
+        let (mut app, linie, text, plan2) = app_mit_linie_und_text();
+        app.session_mut().select(vec![linie, text]);
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Plan 1 · *variiert*");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let eintrag = flaeche(&out, "Plan 2");
+        klick(&mut app, eintrag.center(), 4.0);
+
+        assert_eq!(layername(&app, text), "Beschriftung");
+        assert_eq!(layername(&app, linie), "Zeichnung");
+        for id in [linie, text] {
+            let plan = app
+                .doc()
+                .plan_of_layer(app.doc().entity(id).expect("Objekt").layer)
+                .expect("Plan");
+            assert_eq!(plan.id, plan2, "Objekt {id} liegt nicht in Plan 2");
+        }
+    }
+
+    /// Der obere Abschnitt setzt den Layer im Plan **jedes** Objekts; die Pläne
+    /// bleiben dabei getrennt.
+    #[test]
+    fn layerwahl_aendert_den_namen_und_laesst_die_plaene_stehen() {
+        let (mut app, linie, text, plan2) = app_mit_linie_und_text();
+        // Den Text vorher allein nach Plan 2 schieben.
+        app.mehrfach_ziel = vec![text];
+        app.session_mut()
+            .execute("modify.set", &json!({"ids": [text], "plan": plan2}))
+            .expect("Text nach Plan 2");
+        app.session_mut().select(vec![linie, text]);
+        let out = bild(&mut app, Vec::new(), 1.0);
+        // Pläne verschieden → Feld sagt nur *variiert*.
+        let feld = flaeche(&out, "*variiert*");
+        klick(&mut app, feld.center(), 2.0);
+
+        let out = bild(&mut app, Vec::new(), 3.0);
+        let eintrag = flaeche(&out, "Architektur");
+        klick(&mut app, eintrag.center(), 4.0);
+
+        assert_eq!(layername(&app, linie), "Architektur");
+        assert_eq!(layername(&app, text), "Architektur");
+        let plan_linie = app
+            .doc()
+            .plan_of_layer(app.doc().entity(linie).expect("Linie").layer)
+            .expect("Plan")
+            .id;
+        let plan_text = app
+            .doc()
+            .plan_of_layer(app.doc().entity(text).expect("Text").layer)
+            .expect("Plan")
+            .id;
+        assert_ne!(plan_linie, plan_text, "die Pläne bleiben getrennt");
     }
 }
