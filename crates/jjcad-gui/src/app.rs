@@ -3313,6 +3313,38 @@ impl App {
                     self.set_view(v);
                     self.started_at = 3.0;
                 }
+                // Lotrecht × Nächster Punkt (T0243): waagerechte Vorlage für das Lot
+                // und eine zweite waagerechte Linie als Ziel. Der Zeiger rastet auf
+                // der **Kreuzung** beider Bedingungen ein — Prüfbild mit
+                // `x11-drive.py hover` auf (3000; 2500).
+                "lotkreuzung" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    self.session_mut()
+                        .execute("doc.settings", &serde_json::json!({ "input_unit": "mm" }))
+                        .unwrap();
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0], "b": [6000.0, 0.0], "layer": "Wände"
+                        }),
+                    );
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [1000.0, 2500.0], "b": [4500.0, 2500.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(3000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3000.0, 1400.0);
+                    v.zoom = 0.09;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 "tangential" => {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     // Frische Zeichnung: sie rechnet in Metern, die Punkte des

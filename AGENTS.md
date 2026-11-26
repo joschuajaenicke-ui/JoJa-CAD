@@ -756,6 +756,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   in Weltkoordinaten (`tol` des Fangs, Vorgabe 12 px), also bildschirmkonstant. Der
   Fangbereich ist damit ein Band mit einer Spitze am Bezugspunkt: nah am Punkt begrenzt der
   Winkel, fern die Breite. Eine reine Winkelprüfung (`polar_snap_from_tol`) gibt es nicht mehr.
+- **Lotrecht × Nächster Punkt (T0243)**: Die Senkrechte ist für sich eine *Linie*, der
+  Fang liefert aber nur den Fußpunkt des Zeigers auf ihr — ein Punkt neben der anderen
+  Linie. „Nächster Punkt" liefert umgekehrt den Fußpunkt auf der anderen Linie, neben der
+  Senkrechten. Wer eine lotrechte Linie bis an eine kreuzende zeichnet, meint den **Schnitt
+  beider Bedingungen**; ohne ihn springt der Punkt beim Weiterziehen (gemeldet T0243).
+  Deshalb rechnet `snap::lot_treffer` (Parameter `mit_naechstem`, gespeist aus
+  `snap.nearest`) als **erstes** die Kreuzung der Senkrechten mit jeder fremden Strecke in
+  Zeigernähe (`snap::kreuzung_der_senkrechten` über `nahe_segmente`, dieselbe Auswahl wie
+  „Nächster Punkt"): liegt sie im Fangradius, tritt sie an die Stelle des Fußpunkts. Die
+  Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
+  (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
+  bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
