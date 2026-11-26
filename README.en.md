@@ -9,6 +9,10 @@ for Linux, Windows and macOS.
 
 *Example drawing from the repository: a house, ground floor.*
 
+![Example drawing as a sheet](samples/Wohnhaus.png)
+
+*The example drawing as an A3 sheet with frame, title block and viewport.*
+
 ## The idea
 
 JoJa-CAD is a complete 2D CAD program focused on architecture and building-permit

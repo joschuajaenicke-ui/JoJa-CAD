@@ -70,6 +70,7 @@ sonst in das temporäre Verzeichnis):
 
 ```bash
 cargo run --example zeichnung_png -- samples/Wohnhaus.jjcad /tmp/wohnhaus.png
+cargo run --example blatt_png -- samples/Wohnhaus.jjcad /tmp/wohnhaus-blatt.png
 cargo run --example volumen_erzeugen
 cargo run --example wand_probe
 ```

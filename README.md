@@ -9,6 +9,10 @@ für Linux, Windows und macOS.
 
 *Beispielzeichnung aus dem Repository: Wohnhaus, Erdgeschoss.*
 
+![Beispielzeichnung als Blatt](samples/Wohnhaus.png)
+
+*Die Beispielzeichnung als gesetztes Blatt A3 mit Rahmen, Schriftfeld und Ansichtsfenster.*
+
 ## Die Idee
 
 JoJa-CAD ist ein vollständiges 2D-CAD-Programm mit Fokus auf Architektur und
