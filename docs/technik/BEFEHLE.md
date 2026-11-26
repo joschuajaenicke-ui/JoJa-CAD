@@ -67,6 +67,7 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `dim.chain.h` / `.v` / `.d` | `pts[]`, `line_pos` | Werkzeuge der Oberfläche: Maßkette waagerecht, senkrecht oder direkt — die Achse kommt aus dem Werkzeug, ein mitgegebenes `axis` sticht sie nicht |
 | `dim.point.add` | `ids`, `p` (oder `pos`), optional `index` | Fügt einer Maßkette einen Messpunkt hinzu; ohne `index` an der Stelle, die die Kette entlang der Messrichtung geordnet hält |
 | `dim.point.remove` | `ids`, `index` oder `p` | Entfernt einen Messpunkt; unter zwei Punkten ist das ein Fehler |
+| `dim.radius` | `ids` (Kreis oder Bogen), `p`, optional `angle`, `text` | Radiusbemaßung: Mittelpunkt und Radius kommen aus dem Kreis/Bogen, `p` bestimmt die Richtung der Maßlinie (oder `angle` in Grad); Maßzahl „R …“, Text über `text` ersetzbar. Andere Objektarten sind ein Fehler |
 | `dim.height` | — | Werkzeug der Oberfläche: Maßkette bzw. Abschnitt anklicken, dann die Höhenangabe tippen (Esc/Enter übernimmt) |
 | `dim.height.set` | `ids`, `index`, `text` | Schreibt die Höhenangabe eines Abschnitts (`index` = Abschnitt zwischen `pts[i]` und `pts[i+1]`); leerer Text nimmt sie zurück, ein Index außerhalb der Kette ist ein Fehler |
 | `dim.elevation.plan` | `p`, `z`, `text_pos` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00; `text_pos` = `top` (Vorgabe) / `bottom` / `left` / `right` — Lage des Höhenwertes am Symbol |

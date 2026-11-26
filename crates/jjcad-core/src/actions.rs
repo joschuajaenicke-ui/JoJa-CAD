@@ -309,6 +309,9 @@ pub const ACTIONS: &[ActionDef] = &[
     act!("dim.chain.h", "action.dim.chain.h.label", Bemassung, "dimchain", "m", "action.dim.chain.h.hint", true),
     act!("dim.chain.v", "action.dim.chain.v.label", Bemassung, "dim-v", "", "action.dim.chain.v.hint", true),
     act!("dim.chain.d", "action.dim.chain.d.label", Bemassung, "dim-d", "", "action.dim.chain.d.hint", true),
+    // Radiusbemaßung (T0252): Kreis oder Bogen anklicken, der Klick bestimmt
+    // die Richtung der Maßlinie.
+    act!("dim.radius", "action.dim.radius.label", Bemassung, "radius", "", "action.dim.radius.hint", true),
     // Messpunkt an eine bestehende Maßkette anhängen bzw. herausnehmen
     // (T0154) — beides im Reiter „Bemaßung".
     act!("dim.point.add", "action.dim.point.add.label", Bemassung, "point", "", "action.dim.point.add.hint", true),
@@ -763,6 +766,7 @@ pub fn standard_ebene(action: &str) -> Option<&'static str> {
         | "dim.chain.h"
         | "dim.chain.v"
         | "dim.chain.d"
+        | "dim.radius"
         | "dim.elevation.plan"
         | "dim.elevation.section"
         | "dim.room"
@@ -815,6 +819,7 @@ pub fn erzeuger_fuer(kind: &EntityKind) -> &'static str {
         // nimmt den Modus, der zur Achse des angeklickten Maßes passt
         // (`canvas` wertet die Achse aus) — hier steht der Rückfall.
         EntityKind::Dim { .. } => "dim.chain.d",
+        EntityKind::DimRadius { .. } => "dim.radius",
         EntityKind::ElevationPlan { .. } => "dim.elevation.plan",
         EntityKind::ElevationSection { .. } => "dim.elevation.section",
         EntityKind::Room { .. } => "dim.room",
@@ -2630,6 +2635,72 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
             };
             dim_kette(doc, &p, ebene, feste_achse)
         }
+        // Radiusbemaßung (T0252): Kreis oder Bogen anklicken. Die Richtung
+        // der Maßlinie ist die Richtung vom Mittelpunkt zum Klickpunkt;
+        // `angle` (Grad) setzt sie ausdrücklich. Ohne Kreis oder Bogen ist es
+        // ein Fehler (T0038) — kein stilles Maß im Ursprung.
+        "dim.radius" => {
+            let (c, r) = match (p.pt("c"), p.len("r").or_else(|| p.len("radius"))) {
+                (Some(c), Some(r)) if r > 0.0 => (c, r),
+                _ => {
+                    let ids = ids_from(&p, "ids");
+                    let id = p
+                        .id("id")
+                        .or_else(|| ids.first().copied())
+                        .ok_or_else(|| {
+                            "Radiusbemaßung braucht einen Kreis oder Bogen (ids)".to_string()
+                        })?;
+                    let e = doc
+                        .entity(id)
+                        .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+                    match &e.kind {
+                        EntityKind::Circle { c, r } => (*c, *r),
+                        EntityKind::Arc { c, r, .. } => (*c, *r),
+                        _ => {
+                            return Err(
+                                "Radiusbemaßung · nur für Kreis oder Bogen".to_string()
+                            )
+                        }
+                    }
+                }
+            };
+            if !(r > 0.0) {
+                return Err("Radiusbemaßung braucht einen Radius größer 0".to_string());
+            }
+            let angle = match p.angle("angle") {
+                Some(w) => w,
+                None => {
+                    let q = p.pt("p").unwrap_or_else(|| v(c.x + r, c.y));
+                    let d = q - c;
+                    if d.len() < 1e-6 {
+                        0.0
+                    } else {
+                        d.angle()
+                    }
+                }
+            };
+            let layer = resolve_layer_in(doc, &p, ebene);
+            let idn = doc.new_id();
+            let mut e = Entity::new(
+                idn,
+                layer,
+                EntityKind::DimRadius {
+                    c,
+                    r,
+                    angle,
+                    override_text: p.text("text"),
+                },
+            );
+            apply_common(doc, &mut e, &p, layer);
+            bemasung_schwarz(&p, &mut e);
+            doc.add_entity(e);
+            Ok(json!({
+                "ok": true,
+                "created": [idn],
+                "r_mm": r,
+                "angle": angle.to_degrees()
+            }))
+        }
         // Einen Messpunkt an eine bestehende Maßkette anhängen (T0154).
         //
         // Der Punkt wird an der Stelle eingefügt, die die Kette entlang ihrer
@@ -4025,6 +4096,28 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                                 let (_, n) = crate::render::dim_achse(*angle);
                                 let alt = (*line_pos - pts[0]).dot(n);
                                 *line_pos = *line_pos + n * (off - alt);
+                            }
+                        }
+                        // Radiusbemaßung (T0252): Text, Winkel, Mittelpunkt
+                        // und Radius sind änderbar; der Radius bleibt ein
+                        // eigener Wert (die Bemaßung hängt nicht am Kreis).
+                        EntityKind::DimRadius {
+                            c,
+                            r,
+                            angle,
+                            override_text,
+                        } => {
+                            if let Some(v) = text {
+                                *override_text = Some(v);
+                            }
+                            if let Some(w) = p.angle("angle") {
+                                *angle = w;
+                            }
+                            if let Some(q) = p.pt("c") {
+                                *c = q;
+                            }
+                            if let Some(v) = p.len("r").or_else(|| p.len("radius")) {
+                                *r = v.max(0.001);
                             }
                         }
                         EntityKind::ElevationPlan { z, text_pos, .. } => {

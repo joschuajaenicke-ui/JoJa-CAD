@@ -445,6 +445,9 @@ fn ebene_dropdown(
         let mut out = None;
         ui.add_space(2.0);
         ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.layer"), 11.0));
+        // T0245: Luft unter der Überschrift — die Auswahlfläche der Zeile
+        // darunter reichte sonst bis an den Text und verdeckte ihn.
+        ui.add_space(4.0);
         for name in namen {
             let sel = aktueller_name
                 .map(|a| a.eq_ignore_ascii_case(name))
@@ -457,6 +460,8 @@ fn ebene_dropdown(
         widgets::hline(ui);
         ui.add_space(4.0);
         ui.label(theme::bold(jjcad_core::i18n::tr("gui.props.plan"), 11.0));
+        // T0245: derselbe Abstand unter „Plan“.
+        ui.add_space(4.0);
         for (pid, pname) in plaene {
             let sel = aktuelle_plaene.contains(pid);
             if ui.selectable_label(sel, pname).clicked() {
@@ -2792,6 +2797,149 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 }
 
+/// Radiusbemaßung (T0252) — dieselben Zeilen beim Erzeugen und beim
+/// Bearbeiten. Der Radius kommt aus dem angeklickten Kreis und ist deshalb
+/// eine **Anzeige**; änderbar sind Maßtext und Richtung.
+pub fn radiusbemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
+    let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
+    let unit = app.unit();
+    let (layer, farbe, mut winkel, radius, mut masstext) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::DimRadius {
+                angle,
+                r,
+                override_text,
+                ..
+            } => (
+                e.layer,
+                e.style.color,
+                angle.to_degrees(),
+                *r,
+                override_text.clone().unwrap_or_default(),
+            ),
+            _ => return,
+        },
+        None => (
+            app.werkzeug_ziel_ebene("Beschriftung"),
+            app.ui.pending.color,
+            0.0,
+            0.0,
+            app.options.dim_text.clone(),
+        ),
+    };
+    let farbe_gezeigt = farbe.unwrap_or_else(|| {
+        app.doc()
+            .layer(layer)
+            .map(|l| l.color)
+            .unwrap_or(Color::BLACK)
+    });
+
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.radiusmass"), "radius");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
+    reihenfolge(app, ui, ziel);
+    let (staerke, linientyp) = linienwerte(app, &e, "Beschriftung");
+    let a = gemein(
+        app,
+        ui,
+        ziel,
+        layer,
+        farbe,
+        farbe_gezeigt,
+        staerke,
+        linientyp,
+        true,
+        jjcad_core::i18n::tr("gui.props.farbe"),
+    );
+
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.mass"));
+    zeile("dimkopf");
+
+    // Radius: beim Erzeugen kommt er aus dem Klick, beim Bearbeiten aus dem
+    // gespeicherten Wert — geändert wird er am bemaßten Kreis, nicht hier.
+    zeile("radius");
+    if ziel.ist_neu() {
+        gesperrt_zeile(
+            ui,
+            jjcad_core::i18n::tr("gui.props.radius"),
+            jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+        );
+    } else {
+        let (haupt, hoch) =
+            jjcad_core::units::dim_zahl(radius, app.doc().settings.dim_unit);
+        let txt = format!("R {haupt}{}", hoch.unwrap_or_default());
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.radius"), |ui| {
+            ui.label(theme::mono(txt));
+        });
+    }
+
+    // Richtung der Maßlinie — beim Erzeugen der Klick, beim Bearbeiten ein
+    // Winkel (dieselbe Zeile in beiden Fällen).
+    zeile("winkel");
+    if ziel.ist_neu() {
+        gesperrt_zeile(
+            ui,
+            jjcad_core::i18n::tr("gui.props.winkel"),
+            jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+        );
+    } else {
+        let mut grad = winkel;
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
+            ui.add(widgets::zahl(
+                &mut grad,
+                1.0,
+                widgets::WINKEL_MIN..=widgets::WINKEL_MAX,
+            ));
+        });
+        if (grad - winkel).abs() > 1e-9 {
+            winkel = grad;
+        }
+    }
+
+    zeile("masstext");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.masstext"), |ui| {
+        ui.add_sized(
+            [120.0, 20.0],
+            egui::TextEdit::singleline(&mut masstext)
+                .hint_text(jjcad_core::i18n::tr("gui.props.automatisch")),
+        );
+    });
+
+    match ziel {
+        Ziel::Neu => {
+            gemein_nach_optionen(app, &a);
+            app.options.dim_text = masstext;
+        }
+        Ziel::Auswahl(id) => {
+            gemein_nach_objekt(app, id, &a);
+            let mut params = serde_json::json!({"ids": [id]});
+            let mut geaendert = false;
+            if let Some(map) = params.as_object_mut() {
+                if let Some(e) = &e {
+                    if let EntityKind::DimRadius {
+                        angle,
+                        override_text,
+                        ..
+                    } = &e.kind
+                    {
+                        let alt_text = override_text.clone().unwrap_or_default();
+                        if masstext != alt_text {
+                            map.insert("text".into(), serde_json::json!(masstext));
+                            geaendert = true;
+                        }
+                        if (winkel.to_radians() - *angle).abs() > 1e-9 {
+                            map.insert("angle".into(), serde_json::json!(winkel));
+                            geaendert = true;
+                        }
+                    }
+                }
+            }
+            if geaendert {
+                setzen(app, &params);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Objektarten, deren Maße aus den Klicks entstehen
 // ---------------------------------------------------------------------------
@@ -4954,6 +5102,7 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
                 Some(EntityKind::Window { .. }) => fenster(app, ui, ziel),
                 Some(EntityKind::Fill { .. }) => fuellflaeche(app, ui, ziel),
                 Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
+                Some(EntityKind::DimRadius { .. }) => radiusbemassung(app, ui, ziel),
                 Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
                 Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
                 Some(EntityKind::Room { .. }) => raumstempel(app, ui, ziel),
@@ -5122,7 +5271,7 @@ mod tests {
             EntityKind::Door { .. } => "Türblatt",
             EntityKind::Window { .. } => "Fenstermaße",
             EntityKind::Fill { .. } => "Füllung",
-            EntityKind::Dim { .. } => "Maß",
+            EntityKind::Dim { .. } | EntityKind::DimRadius { .. } => "Maß",
             EntityKind::Room { .. } => "Beschriftung",
             EntityKind::Volume { .. } => "Körper",
             EntityKind::Stair { .. } => "Treppenlauf",
@@ -5697,6 +5846,15 @@ mod tests {
             },
         ),
         (
+            "dim.radius",
+            EntityKind::DimRadius {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+                angle: 0.0,
+                override_text: None,
+            },
+        ),
+        (
             "dim.elevation.plan",
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
@@ -5916,6 +6074,7 @@ mod tests {
                     | EntityKind::Window { .. }
                     | EntityKind::Fill { .. }
                     | EntityKind::Dim { .. }
+                    | EntityKind::DimRadius { .. }
                     | EntityKind::Volume { .. }
                     | EntityKind::Stair { .. }
                     | EntityKind::Room { .. }
@@ -6058,6 +6217,12 @@ mod tests {
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
                 heights: Vec::new(),
+            },
+            EntityKind::DimRadius {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+                angle: 0.0,
+                override_text: None,
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
@@ -7446,6 +7611,58 @@ mod tests_layer_plan {
         // Abschnittsüberschriften „Layer“ und „Plan“ — „Plan 1“ gibt es nicht.
         assert!(alle.iter().any(|t| t.trim() == "Layer"), "Abschnitt Layer fehlt");
         assert!(alle.iter().any(|t| t.trim() == "Plan"), "Abschnitt Plan fehlt");
+    }
+
+    /// Unter den Überschriften „Layer“ und „Plan“ steht Luft: die
+    /// Auswahlfläche der ersten Zeile darunter reichte sonst bis an den Text
+    /// und verdeckte ihn, sobald die Zeile gewählt war.
+    #[test]
+    fn ueberschriften_haben_abstand_zur_ersten_zeile() {
+        let (mut app, linie, text, _plan2) = app_mit_linie_und_text();
+        app.session_mut().select(vec![linie, text]);
+        let out = bild(&mut app, Vec::new(), 1.0);
+        let feld = flaeche(&out, "Plan 1 · *variiert*");
+        klick(&mut app, feld.center(), 2.0);
+        let out = bild(&mut app, Vec::new(), 3.0);
+
+        let alle = texte(&out);
+        // „Layer“ steht auch als Zeilenname links am Feld — die Überschrift im
+        // Menü ist die untere der beiden.
+        let kopf_layer = alle
+            .iter()
+            .filter(|(t, _)| t.trim() == "Layer")
+            .map(|(_, r)| *r)
+            .max_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("Überschrift Layer");
+        let erste_zeile = alle
+            .iter()
+            .filter(|(t, _)| t.trim() == "Zeichnung")
+            .map(|(_, r)| *r)
+            .min_by(|a, b| a.top().total_cmp(&b.top()))
+            .expect("Layer Zeichnung im Menü");
+        let kopf_plan = alle
+            .iter()
+            .find(|(t, _)| t.trim() == "Plan")
+            .map(|(_, r)| *r)
+            .expect("Überschrift Plan");
+        let erster_plan = alle
+            .iter()
+            .find(|(t, _)| t.trim() == "Plan 1")
+            .map(|(_, r)| *r)
+            .expect("Plan 1 im Menü");
+
+        let luecke_layer = erste_zeile.top() - kopf_layer.bottom();
+        let luecke_plan = erster_plan.top() - kopf_plan.bottom();
+        // Ohne den Abstand sind es 6 px (gemessen) — die Auswahlfläche der
+        // Zeile reicht darüber hinaus und deckte den Text zu. Mit sind es 10.
+        assert!(
+            luecke_layer >= 8.0,
+            "zu wenig Luft unter „Layer“: {luecke_layer:.1} px"
+        );
+        assert!(
+            luecke_plan >= 8.0,
+            "zu wenig Luft unter „Plan“: {luecke_plan:.1} px"
+        );
     }
 
     /// Abnahmefall aus dem Ticket: Klick auf „Plan 2“ verschiebt beide

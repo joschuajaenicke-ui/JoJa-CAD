@@ -336,6 +336,12 @@ pub fn grips_of(e: &Entity) -> Vec<(GripKind, V2)> {
         // Maßlinie (Raute, `GripKind::Edge(0)`) — Ziehen verschiebt sie
         // senkrecht zur Messrichtung (T0055).
         EntityKind::Dim { .. } => dim_griffe(e),
+        // Radiusbemaßung (T0252): Mittelpunkt und Bogenpunkt. Der Bogenpunkt
+        // dreht die Maßlinie, der Mittelpunkt verschiebt sie.
+        EntityKind::DimRadius { c, r, angle, .. } => vec![
+            (GripKind::Vert(0), *c),
+            (GripKind::Vert(1), *c + V2::polar(*angle, *r)),
+        ],
         // Raumstempel: die Ecken der (unsichtbaren) Umgrenzung erscheinen erst
         // mit der Auswahl des Textfeldes — genau dann ist das Objekt gewählt.
         // Der runde Griff am Textfeld verschiebt nur die Beschriftung.
@@ -462,6 +468,16 @@ pub fn apply_grip_tol(orig: &Entity, kind: GripKind, target: V2, tol: f64) -> Op
         // Strecken, die es so nicht mehr gibt (T0195).
         (EntityKind::Dim { pts, .. }, GripKind::Vert(i)) => {
             *pts.get_mut(i)? = target;
+        }
+        // Radiusbemaßung: der Mittelpunkt wandert, der Bogenpunkt dreht die
+        // Maßlinie (der Radius bleibt — er gehört zum bemaßten Kreis).
+        (EntityKind::DimRadius { c, .. }, GripKind::Vert(0)) => *c = target,
+        (EntityKind::DimRadius { c, angle, .. }, GripKind::Vert(_)) => {
+            let d = target - *c;
+            if d.len() < 1e-6 {
+                return None;
+            }
+            *angle = d.angle();
         }
         (EntityKind::ElevationPlan { p, .. }, GripKind::Vert(_)) => *p = target,
         (EntityKind::ElevationSection { pts }, GripKind::Vert(i)) => {
@@ -714,6 +730,8 @@ pub fn bezugspunkte(e: &Entity, kind: GripKind) -> Vec<V2> {
     match (&e.kind, kind) {
         (EntityKind::Line { b, .. } | EntityKind::Wall { b, .. }, GripKind::Vert(0)) => vec![*b],
         (EntityKind::Line { a, .. } | EntityKind::Wall { a, .. }, GripKind::Vert(1)) => vec![*a],
+        // Radiusbemaßung: der Bogenpunkt richtet sich am Mittelpunkt aus.
+        (EntityKind::DimRadius { c, .. }, GripKind::Vert(1)) => vec![*c],
         // Bemaßung: der Bezug für Ortho/Polar ist der Nachbarpunkt der Kette.
         (EntityKind::Dim { pts, .. }, GripKind::Vert(i)) => {
             let n = pts.len();

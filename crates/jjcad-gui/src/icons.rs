@@ -352,6 +352,15 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
                 );
             }
         }
+        // Radiusbemaßung (T0252): Kreis mit Maßlinie vom Mittelpunkt zum
+        // Bogenpunkt und Pfeilspitze dort.
+        "radius" => {
+            i.circle(12.0, 12.0, 7.5);
+            i.dot(12.0, 12.0, 1.0);
+            i.line(12.0, 12.0, 17.3, 6.7);
+            i.line(17.3, 6.7, 13.9, 7.2);
+            i.line(17.3, 6.7, 17.0, 10.1);
+        }
         // Grundriss-Kote: Kreis mit Fadenkreuz, zwei gegenüberliegende Viertel
         // gefüllt — dasselbe Symbol, das die Zeichnung zeigt.
         "elevation" => {
