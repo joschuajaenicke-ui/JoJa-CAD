@@ -36,6 +36,11 @@ cp "$BIN/jjcad" "$BIN/jjcad-mcp" "$APPDIR/usr/bin/"
 # Schriften neben das Programm: dort sucht sie der Kern zuerst.
 cp "$PROJ"/packaging/fonts/*.ttf "$APPDIR/usr/bin/fonts/"
 
+# Lizenztext und README gehören mit ins Paket: die GPL verlangt den Lizenztext
+# bei jeder Weitergabe der Binärfassung, und das AppImage ist eine einzelne Datei.
+mkdir -p "$APPDIR/usr/share/doc/joja-cad"
+cp "$PROJ/LICENSE" "$PROJ/README.md" "$APPDIR/usr/share/doc/joja-cad/"
+
 for s in 16 24 32 48 64 128 256 512; do
     mkdir -p "$APPDIR/usr/share/icons/hicolor/${s}x${s}/apps"
     cp "$PROJ/crates/jjcad-gui/assets/jjc-icon-$s.png" \

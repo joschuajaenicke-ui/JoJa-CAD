@@ -44,7 +44,7 @@ Q1 2027.
 |---|---|
 | **Primitives** | point, line, polyline, rectangle, circle, arc, ellipse, hatch, text |
 | **Architecture** | wall with openings, door, window, stair, volume — the parts connect dynamically: mitres at junctions, openings cut the wall, doors sit on the leaf side |
-| **Dimensions** | single dimension, dimension chain, plan and section level marks per DIN 406/1356; dimension text in mm/cm/m |
+| **Dimensions** | single dimension, dimension chain with level marks, radius, plan and section level marks per DIN 406/1356; dimension text in mm/cm/m |
 | **Blocks** | system library (sanitary, kitchen, furniture, symbols) and your own project blocks, extensible |
 | **Exchange** | import and export of PDF, PNG and DXF |
 | **AI control** | MCP server with 10 tools, fully headless, including image responses |
@@ -74,21 +74,21 @@ run, no installation, no administrator rights, no account.
 **AppImage** (recommended, a single file):
 
 ```bash
-chmod +x JoJa-CAD-0.2.4-x86_64.AppImage
-./JoJa-CAD-0.2.4-x86_64.AppImage
+chmod +x JoJa-CAD-0.2.5-x86_64.AppImage
+./JoJa-CAD-0.2.5-x86_64.AppImage
 ```
 
 If you keep several AppImages around, manage them with
 [Gear Lever](https://github.com/mijorus/gearlever): it registers the menu entry,
 updates on a new release and keeps the files in one place instead of the
 download folder. On a system without FUSE,
-`./JoJa-CAD-0.2.4-x86_64.AppImage --appimage-extract-and-run` does the job.
+`./JoJa-CAD-0.2.5-x86_64.AppImage --appimage-extract-and-run` does the job.
 
 **Tar archive** (if you prefer plain files): unpack and start `./jjcad`. The
 fonts live in the `fonts/` folder next to the program.
 
 The **MCP server** ships in both packages: in the AppImage via `--mcp`
-(e.g. `./JoJa-CAD-0.2.4-x86_64.AppImage --mcp --selftest`), in the tar archive as
+(e.g. `./JoJa-CAD-0.2.5-x86_64.AppImage --mcp --selftest`), in the tar archive as
 its own file `jjcad-mcp`.
 
 ### Windows
@@ -122,15 +122,15 @@ Built, but not tried out yet — feedback welcome. Two packages: `macos-arm64` f
 Apple Silicon, `macos-x64` for Intel Macs.
 
 ```bash
-unzip JoJa-CAD-0.2.4-macos-arm64.zip
-xattr -dr com.apple.quarantine JoJa-CAD-0.2.4.app
-open JoJa-CAD-0.2.4.app
+unzip JoJa-CAD-0.2.5-macos-arm64.zip
+xattr -dr com.apple.quarantine JoJa-CAD-0.2.5.app
+open JoJa-CAD-0.2.5.app
 ```
 
 The program is **not signed and not notarised** (that needs an Apple Developer
 account), so macOS blocks the first launch. The `xattr` command lifts the
 quarantine; alternatively right-click the app → "Open" → "Open". The MCP server
-sits next to it as `JoJa-CAD-0.2.4.app/Contents/MacOS/jjcad-mcp`, the fonts under
+sits next to it as `JoJa-CAD-0.2.5.app/Contents/MacOS/jjcad-mcp`, the fonts under
 `Contents/MacOS/fonts/`.
 
 To build it yourself: see [Building](#building).
@@ -144,7 +144,7 @@ JoJa-CAD/
 │   ├── jjcad-gui/      desktop application (egui/eframe)
 │   └── jjcad-mcp/      MCP server over stdio
 ├── docs/               architecture, file format, commands, MCP, usage, status
-├── samples/            example drawings, PDF, PNG, DXF (placeholders)
+├── samples/            example drawings and the README images, PDF, DXF
 └── scripts/            helper scripts (headless start, screenshot, roundtrip test)
 ```
 

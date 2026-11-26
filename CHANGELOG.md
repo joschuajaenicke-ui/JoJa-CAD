@@ -8,20 +8,52 @@ Abschnitte je Version: **Neu**, **Geändert**, **Behoben**. Ein Eintrag ist ein
 Satz aus Nutzersicht — was man jetzt anders machen kann, nicht welche Datei
 angefasst wurde.
 
-## [Unveröffentlicht]
+## [0.2.5] — 2026-11-26
 
-### Neu
-- Wurde eine Zeichnung außerhalb von JoJa-CAD verändert, während ungespeicherte Arbeit im Sicherungsordner liegt, fragt der Programmstart, welche Fassung weiterverwendet werden soll; bis zur Entscheidung gilt die Datei, überschrieben wird nichts.
-- Wird ein Reiter mit „Verwerfen“ geschlossen, bleibt der letzte Arbeitsstand als verworfener Stand im Sicherungsordner liegen; die Einstellungsseite zeigt die Zahl der verworfenen Stände an, zurückgeholt wird nichts.
+Diese Runde dreht sich um das Zeichnen mit getippten Maßen: Die Länge lässt sich nun direkt am Fadenkreuz eingeben, und die Vorschau folgt der Eingabe, statt am Mauszeiger zu enden. Ecken können mit einem Klick abgerundet oder mit einer Phase versehen werden. Die Maßketten sind damit vollständig: Radien lassen sich bemaßen, Höhenangaben sind möglich, und Drehen schaltet die Kette um.
+
+### Zeichnen mit Maßen
+
+- **Längenfeld**: Länge und Winkel erscheinen in einem Feld rechts über dem Fadenkreuz; vor der Eingabe steht dort grau die gemessene Länge und der Winkel, sobald eine Zahl getippt wird, ist das Feld hervorgehoben und zeigt die getippte Länge samt Einheit.
+- **Werkzeugsymbol**: Das Symbol des Werkzeugs bleibt rechts unter dem Eingabefeld sichtbar.
+- **Vorschau**: Die Vorschau des Werkzeugs endet in der getippten Länge statt am Mauszeiger, sodass man vor dem Klick sieht, was entsteht.
+
+### Ecken
+
+- **Abrunden und Phase**: Das neue Werkzeug liegt unter Ändern in der Gruppe Geometrie.
+- **Ecke**: Die Ecke wird mit einem Klick gewählt, wenn der Zeiger sie trifft — der Schnittpunkt zweier Linien, der Knick einer Polylinie oder die Naht eines Pfades —, sonst werden erste Linie und zweite Linie nacheinander angeklickt.
+- **Maß**: Danach bestimmt der Mauszeiger das Maß und der Klick setzt es; das Maß lässt sich stattdessen tippen und mit Enter bestätigen.
+- **Vorschau der Ecke**: Die Vorschau zeigt die fertige Ecke mit gekürzten Schenkeln und Bogen (Abrunden) beziehungsweise gerader Verbindung (Phase).
+- **Klickstelle**: Die Klickstelle entscheidet, welcher Teil einer Linie stehen bleibt.
+- **Polylinie und Pfad**: Polylinie und Pfad bleiben ein Objekt; zwischen den Anschlusspunkten liegt der Bogen beziehungsweise das gerade Stück.
+- **Zu großes Maß**: Ist das Maß für den kürzesten Schenkel zu groß, meldet das Programm das, und die Zeichnung bleibt unverändert.
+
+### Maßketten
+
+- **Radius**: Das neue Werkzeug bemaßt Kreis und Bogen; die Maßlinie läuft vom Mittelpunkt zum Bogenpunkt, die Richtung bestimmt der Klickpunkt, und die Maßzahl steht als „R …" außerhalb des Kreises. Das Werkzeug bleibt für weitere Radien aktiv.
+- **Höhenangabe**: Das neue Werkzeug wird auf einen Abschnitt der Maßkette angewendet; unter der Maßlinie erscheint ein Textfeld für die Höhe. Enter, Esc oder ein Klick daneben übernimmt die Eingabe, Rechtsklick bricht ab. Jeder Abschnitt trägt höchstens eine Angabe; sie steht unter der Kette, während die Maßzahl darüber steht, und wandert mit. Ein Doppelklick öffnet sie wieder, ein leerer Text nimmt sie zurück.
+- **Drehen**: Drehen schaltet eine laufende Maßkette zwischen waagerecht und senkrecht um, statt das Drehwerkzeug zu starten; gesetzte Punkte bleiben stehen.
+- **Maßzahl**: Die Maßzahl steht immer mittig über ihrem Abschnitt, auch wenn der Abschnitt schmaler als die Zahl ist.
 
 ### Geändert
-- Das mitgelieferte Beispiel `samples/Wohnhaus.jjcad` ist eine neu gezeichnete Wohnhaus-Datei mit Erd- und Obergeschoss; das Bild im README zeigt diese Zeichnung.
-- Die Sicherung bewahrt Stände nach dem Verfahren Geometric Retention auf: mit festem Platzvorrat, gleichbleibender Auflösung über die Nutzungsdauer und einem Alter in Zyklen statt in Kalenderzeit.
-- Neue Vorgaben sind 150 Plätze, eine Reichweite von einer Woche und ein Intervall von einer Minute; der Aufbewahrungszeitraum ist als Tag, Woche, Monat oder Quartal wählbar, die Wahl „Jahr“ entfällt.
-- Der neueste Stand einer Zeichnung bleibt bis zum Ende des Aufbewahrungszeitraums erhalten und verfällt danach mit dem Verlauf; der älteste Stand rückt nach, sobald der Verlauf tief genug ist.
-- Die Obergrenze des Sicherungsordners beträgt max(Plätze, 2 × Zeichnungen), sodass jede Zeichnung Platz für ihren neuesten und ihren ältesten Stand behält.
-- Die Anzeige „Abstand der Stände“ rechnet nach der Formel des neuen Verfahrens.
-- Das Speichern der Zieldatei ist atomar über eine temporäre Datei, fsync und rename; ein Absturz mitten im Speichern hinterlässt keine halbe Datei mehr.
+
+- **Layer und Plan**: Beide werden im Auswahlmenü getrennt gewählt — erst die Layernamen, darunter die Pläne. Ein Planwechsel behält den Layernamen, sodass mehrere Objekte verschiedener Layer gemeinsam auf einen anderen Plan wandern, ohne ihre Layerstruktur zu verlieren.
+- **Neue Zeichnungen**: Alle Standardlayer sind schwarz; bisher standen Beschriftungen rot und Blöcke grau. Vorhandene Zeichnungen behalten ihre Layerfarben.
+- **Keine Füllung**: „Keine Füllung" betrifft nur die Flächenfarbe — Muster und Umrandung bleiben sichtbar, eine Fläche darf also eine Schraffur ohne Hintergrund tragen. Die Musterwahl schaltet die Füllung nicht mehr ein, und im Menü steht „Standard" vor „Keine Füllung".
+- **Beispiel**: Das mitgelieferte Beispiel ist eine neu gezeichnete Wohnhaus-Datei mit Erd- und Obergeschoss; die Bilder in der README zeigen diese Zeichnung.
+
+### Behoben
+
+- **Verbinden**: Beim Verbinden einer Linie mit einem Kreisbogen konnte der Bogen auf die andere Seite des Kreises gedreht werden. Die Laufrichtung gehört jetzt zum Bogenstück und bleibt beim Verbinden erhalten.
+- **Fang**: Der Fang am Kreuzungspunkt aus Lotrecht und nächstem Punkt zeigte nur das Lotzeichen; jetzt stehen Lot- und Schnittpunktzeichen beide am Fangpunkt.
+
+### Bekannt
+
+- Die Windows- und die macOS-Fassung sind gebaut, aber nicht ausgiebig getestet.
+- Unter Wayland wird die Fensterposition nicht gespeichert (siehe
+  `docs/benutzer/BEKANNTE-GRENZEN.md`).
+- Die Beispieldatei Wohnhaus ist neu gezeichnet; die übrigen Dateien in
+  `samples/` sind Testmaterial ohne fachliche Prüfung.
 
 ## [0.2.4] — 2026-11-22
 
@@ -45,6 +77,31 @@ portabel: sie legen ihre Daten neben dem Programm ab.
   (Vorgabe Schrägstrich), die Marke liegt auf der Maßlinie, Begrenzungszeichen
   stehen nur, wo sie hingehören, und die Verlängerung zu den Messpunkten ist
   abschaltbar.
+
+### Sicherung
+
+- Wurde eine Zeichnung außerhalb von JoJa-CAD verändert, während ungespeicherte
+  Arbeit im Sicherungsordner liegt, fragt der Programmstart, welche Fassung
+  weiterverwendet werden soll; bis zur Entscheidung gilt die Datei,
+  überschrieben wird nichts.
+- Wird ein Reiter mit „Verwerfen“ geschlossen, bleibt der letzte Arbeitsstand
+  als verworfener Stand im Sicherungsordner liegen; die Einstellungsseite zeigt
+  die Zahl der verworfenen Stände an, zurückgeholt wird nichts.
+- Die Sicherung bewahrt Stände nach dem Verfahren Geometric Retention auf: mit
+  festem Platzvorrat, gleichbleibender Auflösung über die Nutzungsdauer und
+  einem Alter in Zyklen statt in Kalenderzeit.
+- Neue Vorgaben sind 150 Plätze, eine Reichweite von einer Woche und ein
+  Intervall von einer Minute; der Aufbewahrungszeitraum ist als Tag, Woche,
+  Monat oder Quartal wählbar, die Wahl „Jahr“ entfällt.
+- Der neueste Stand einer Zeichnung bleibt bis zum Ende des
+  Aufbewahrungszeitraums erhalten und verfällt danach mit dem Verlauf; der
+  älteste Stand rückt nach, sobald der Verlauf tief genug ist.
+- Die Obergrenze des Sicherungsordners beträgt max(Plätze, 2 × Zeichnungen),
+  sodass jede Zeichnung Platz für ihren neuesten und ihren ältesten Stand
+  behält.
+- Die Anzeige „Abstand der Stände“ rechnet nach der Formel des neuen Verfahrens.
+- Das Speichern der Zieldatei ist atomar über eine temporäre Datei, fsync und
+  rename; ein Absturz mitten im Speichern hinterlässt keine halbe Datei mehr.
 
 ### Neu
 
