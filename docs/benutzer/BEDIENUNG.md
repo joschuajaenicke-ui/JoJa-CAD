@@ -432,8 +432,13 @@ ausgeblendet.
   **Schnittpunkt** beider Linien (dem festen Punkt), leicht daneben oben rechts, damit sie
   den Punkt nicht zudeckt. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der
   Statusleiste („Lotfang“).
-  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (14 Tests, prüfen das Skalarprodukt
-  der beiden Richtungen gegen 0, die Lage der Marke und die Wandkanten).
+  **Mit „Nächster Punkt“ zusammen** (T0243): Kreuzt die Senkrechte eine andere Linie in
+  Zeigernähe, wird deren **Schnittpunkt** gefangen — der Punkt liegt dann auf der
+  Senkrechten *und* auf der anderen Linie. So endet eine lotrechte Linie genau dort, wo sie
+  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (22 Tests, prüfen das Skalarprodukt
+  der beiden Richtungen gegen 0, die Lage der Marke, die Wandkanten und die Kreuzung mit
+  einer anderen Linie).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
@@ -564,6 +569,13 @@ ausgeblendet.
   Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
   Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
   Farbpunkt im Layer-Manager.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel ist **ein**
+  Dropdown mit **zwei Abschnitten**: oben jeder Layername **einmal**, darunter die Pläne. Ein Klick
+  auf einen Layernamen setzt diesen Layer im Plan **jedes** gewählten Objekts; ein Klick auf einen
+  Plan verschiebt alle gewählten Objekte dorthin und behält ihren Layernamen bei — ein Text bleibt
+  auf „Beschriftung“, eine Linie auf „Zeichnung“. Liegen die Objekte im selben Plan, nennt das Feld
+  den Plan und meldet abweichende Layer als `*variiert*` („Plan 1 · *variiert*“); liegen sie in
+  verschiedenen Plänen, steht dort `*variiert*`.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

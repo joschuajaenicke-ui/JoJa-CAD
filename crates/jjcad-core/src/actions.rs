@@ -3347,6 +3347,61 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     .filter(|i| doc.layers.iter().any(|x| x.id == *i))
                     .or_else(|| l.as_str().and_then(|s| doc.layer_id_by_name(s)))
             });
+            // T0245: Layer und Plan sind zwei getrennte Aufträge.
+            // `plan` = Zielplan, die Objekte behalten ihren **Layernamen**;
+            // `layer_name` = dieser Name im Plan **jedes** Objekts. Beides
+            // erhält die Layerstruktur — vorher ließ sich nur eine Ebene für
+            // alle Objekte setzen, und ein Eintrag der Liste trug Plan und
+            // Layer zugleich.
+            let ziel_plan: Option<Id> = match p.v.get("plan") {
+                None | Some(Value::Null) => None,
+                Some(v) => {
+                    let pid = v
+                        .as_u64()
+                        .filter(|i| doc.plans.iter().any(|x| x.id == *i))
+                        .or_else(|| {
+                            v.as_str().and_then(|s| {
+                                doc.plans
+                                    .iter()
+                                    .find(|x| x.name.eq_ignore_ascii_case(s))
+                                    .map(|x| x.id)
+                            })
+                        });
+                    match pid {
+                        Some(id) => Some(id),
+                        None => return Err("Plan nicht gefunden".into()),
+                    }
+                }
+            };
+            let ziel_name = p
+                .text("layer_name")
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
+            // Ziellayer je Objekt vorab ausrechnen: der Name bleibt, nur der
+            // Plan wechselt (bzw. der Name wechselt im eigenen Plan).
+            let ebene_je_objekt: Vec<(Id, Id)> = if ziel_plan.is_some() || ziel_name.is_some() {
+                let mut liste = Vec::new();
+                for eid in &ids {
+                    let Some(e) = doc.entity(*eid) else { continue };
+                    let Some(l) = doc.layer(e.layer) else { continue };
+                    let (alt_name, alt_color, alt_plan) = (l.name.clone(), l.color, l.plan);
+                    let plan = ziel_plan.unwrap_or(alt_plan);
+                    let name = ziel_name.clone().unwrap_or(alt_name);
+                    // Vorhandene Ebene dieses Namens im Zielplan behält ihre
+                    // Farbe; sonst erbt die neue die Farbe der Quellebene.
+                    let color = doc
+                        .layers
+                        .iter()
+                        .find(|x| x.plan == plan && x.name.eq_ignore_ascii_case(&name))
+                        .map(|x| x.color)
+                        .unwrap_or(alt_color);
+                    let lid = doc.ensure_layer_in(&name, color, plan);
+                    liste.push((*eid, lid));
+                }
+                liste
+            } else {
+                Vec::new()
+            };
             // Ausrichtung vorab lesen (gilt für Wand und Öffnungen)
             let align_new: Option<crate::style::WallAlign> =
                 p.text("align").map(|al| match al.to_lowercase().as_str() {
@@ -3426,7 +3481,13 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                     _ => None,
                 };
                 if let Some(e) = doc.entity_mut(*eid) {
-                    if let Some(lid) = new_layer {
+                    let ziel_ebene = new_layer.or_else(|| {
+                        ebene_je_objekt
+                            .iter()
+                            .find(|(id, _)| id == eid)
+                            .map(|(_, l)| *l)
+                    });
+                    if let Some(lid) = ziel_ebene {
                         e.layer = lid;
                     }
                     if let Some(c) = p.color("color") {

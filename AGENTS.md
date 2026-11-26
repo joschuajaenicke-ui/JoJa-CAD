@@ -288,6 +288,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
   `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
   und `cargo test -p jjcad-core --test massketten_farbe`.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel
+  ist **ein** Dropdown mit zwei Abschnitten — oben jeder Layername **einmal**, darunter
+  die Pläne (`props::ebene_dropdown`). Das Feld nennt den gemeinsamen Plan und meldet
+  abweichende Layer als `*variiert*`; liegen die Objekte in verschiedenen Plänen, steht
+  dort `*variiert*`. Zwei getrennte Aufträge an die Befehlsschicht, beide über
+  `modify.set`: `layer_name` setzt diesen Namen im Plan **jedes** Objekts, `plan`
+  verschiebt auf denselben Layernamen im Zielplan (`actions.rs` rechnet die Ziellayer je
+  Objekt vorab, `ensure_layer_in` legt fehlende an). Nur so verschieben sich mehrere
+  Objekte verschiedener Layer gemeinsam auf einen anderen Plan, ohne ihre
+  Layerstruktur zu verlieren. Ältere Einträge der Liste („Plan · Layer“) gibt es nicht
+  mehr. Prüfweg: `cargo test -p jjcad-core --test layer_plan` und
+  `cargo test -p jjcad-gui tests_layer_plan`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
@@ -783,6 +795,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   in Weltkoordinaten (`tol` des Fangs, Vorgabe 12 px), also bildschirmkonstant. Der
   Fangbereich ist damit ein Band mit einer Spitze am Bezugspunkt: nah am Punkt begrenzt der
   Winkel, fern die Breite. Eine reine Winkelprüfung (`polar_snap_from_tol`) gibt es nicht mehr.
+- **Lotrecht × Nächster Punkt (T0243)**: Die Senkrechte ist für sich eine *Linie*, der
+  Fang liefert aber nur den Fußpunkt des Zeigers auf ihr — ein Punkt neben der anderen
+  Linie. „Nächster Punkt" liefert umgekehrt den Fußpunkt auf der anderen Linie, neben der
+  Senkrechten. Wer eine lotrechte Linie bis an eine kreuzende zeichnet, meint den **Schnitt
+  beider Bedingungen**; ohne ihn springt der Punkt beim Weiterziehen (gemeldet T0243).
+  Deshalb rechnet `snap::lot_treffer` (Parameter `mit_naechstem`, gespeist aus
+  `snap.nearest`) als **erstes** die Kreuzung der Senkrechten mit jeder fremden Strecke in
+  Zeigernähe (`snap::kreuzung_der_senkrechten` über `nahe_segmente`, dieselbe Auswahl wie
+  „Nächster Punkt"): liegt sie im Fangradius, tritt sie an die Stelle des Fußpunkts. Die
+  Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
+  (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
+  bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem

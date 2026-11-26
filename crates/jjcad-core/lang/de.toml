@@ -1891,6 +1891,7 @@ laenge_und_winkel_entstehen_aus_den_klicks = "Länge und Winkel entstehen aus de
 laenge_x_achse_x_x_x_x = "Länge {wert1} · Achse ({wert2}, {wert3}) – ({wert4}, {wert5})"
 lage_in_der_wanddicke_links_mittig_rechts = "Lage in der Wanddicke: Links / Mittig / Rechts"
 layer = "Layer"
+plan = "Plan"
 linie = "Linie"
 linientyp = "Linientyp"
 daemmung_breite = "Breite"
