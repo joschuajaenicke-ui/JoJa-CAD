@@ -276,6 +276,10 @@
 # hint = "Maßkette direkt — zwei Messpunkte, dann die Maßlinie parallel"
 # label = "Direkt"
 #
+[action.dim.radius]
+# hint = "Kreis oder Bogen anklicken — der Klick bestimmt die Richtung"
+# label = "Radius"
+#
 [action.dim.point.add]
 # hint = "Messpunkt anklicken — kommt in die Maßkette"
 # label = "Punkt hinzufügen"
@@ -1099,6 +1103,8 @@
 # mass_zweiter_punkt = "Maß · zweiter Punkt"
 # masskette_erster_punkt = "Maßkette · erster Punkt"
 # masskette_gesetzt = "Maßkette · gesetzt"
+# radius_kreis_oder_bogen = "Radius · Kreis oder Bogen klicken"
+# radius_gesetzt = "Radius · gesetzt"
 # masskette_position_klicken = "Maßkette · Position der Maßlinie"
 # masskette_messpunkt_klicken_enter = "Maßkette · Messpunkt klicken (Esc beendet)"
 # masskette_zweiter_punkt = "Maßkette · zweiter Messpunkt"
@@ -1946,6 +1952,7 @@
 # punkte_flaeche_und_umriss_erscheinen_am_platzierten_obje = "Punkte, Fläche und Umriss erscheinen am platzierten Objekt"
 # r_dreht_die_oeffnung_f_spiegelt_sie = "R dreht die Öffnung, F spiegelt sie"
 # radius = "Radius"
+# radiusmass = "Radiusmaß"
 # radius_und_mittelpunkt_entstehen_aus_den_klicks = "Radius und Mittelpunkt entstehen aus den Klicks"
 # radius_und_winkel_entstehen_aus_den_klicks = "Radius und Winkel entstehen aus den Klicks"
 # raumstempel = "Raumstempel"

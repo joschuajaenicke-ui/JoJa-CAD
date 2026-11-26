@@ -2792,6 +2792,149 @@ pub fn bemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
     }
 }
 
+/// Radiusbemaßung (T0252) — dieselben Zeilen beim Erzeugen und beim
+/// Bearbeiten. Der Radius kommt aus dem angeklickten Kreis und ist deshalb
+/// eine **Anzeige**; änderbar sind Maßtext und Richtung.
+pub fn radiusbemassung(app: &mut App, ui: &mut Ui, ziel: Ziel) {
+    let e: Option<Entity> = ziel.id().and_then(|id| app.doc().entity(id).cloned());
+    let unit = app.unit();
+    let (layer, farbe, mut winkel, radius, mut masstext) = match &e {
+        Some(e) => match &e.kind {
+            EntityKind::DimRadius {
+                angle,
+                r,
+                override_text,
+                ..
+            } => (
+                e.layer,
+                e.style.color,
+                angle.to_degrees(),
+                *r,
+                override_text.clone().unwrap_or_default(),
+            ),
+            _ => return,
+        },
+        None => (
+            app.werkzeug_ziel_ebene("Beschriftung"),
+            app.ui.pending.color,
+            0.0,
+            0.0,
+            app.options.dim_text.clone(),
+        ),
+    };
+    let farbe_gezeigt = farbe.unwrap_or_else(|| {
+        app.doc()
+            .layer(layer)
+            .map(|l| l.color)
+            .unwrap_or(Color::BLACK)
+    });
+
+    kopf(app, ui, ziel, jjcad_core::i18n::tr("gui.props.radiusmass"), "radius");
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.allgemein"));
+    reihenfolge(app, ui, ziel);
+    let (staerke, linientyp) = linienwerte(app, &e, "Beschriftung");
+    let a = gemein(
+        app,
+        ui,
+        ziel,
+        layer,
+        farbe,
+        farbe_gezeigt,
+        staerke,
+        linientyp,
+        true,
+        jjcad_core::i18n::tr("gui.props.farbe"),
+    );
+
+    abschnitt(ui, jjcad_core::i18n::tr("gui.props.mass"));
+    zeile("dimkopf");
+
+    // Radius: beim Erzeugen kommt er aus dem Klick, beim Bearbeiten aus dem
+    // gespeicherten Wert — geändert wird er am bemaßten Kreis, nicht hier.
+    zeile("radius");
+    if ziel.ist_neu() {
+        gesperrt_zeile(
+            ui,
+            jjcad_core::i18n::tr("gui.props.radius"),
+            jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+        );
+    } else {
+        let (haupt, hoch) =
+            jjcad_core::units::dim_zahl(radius, app.doc().settings.dim_unit);
+        let txt = format!("R {haupt}{}", hoch.unwrap_or_default());
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.radius"), |ui| {
+            ui.label(theme::mono(txt));
+        });
+    }
+
+    // Richtung der Maßlinie — beim Erzeugen der Klick, beim Bearbeiten ein
+    // Winkel (dieselbe Zeile in beiden Fällen).
+    zeile("winkel");
+    if ziel.ist_neu() {
+        gesperrt_zeile(
+            ui,
+            jjcad_core::i18n::tr("gui.props.winkel"),
+            jjcad_core::i18n::tr("gui.props.aus_den_klicks"),
+        );
+    } else {
+        let mut grad = winkel;
+        widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.winkel"), |ui| {
+            ui.add(widgets::zahl(
+                &mut grad,
+                1.0,
+                widgets::WINKEL_MIN..=widgets::WINKEL_MAX,
+            ));
+        });
+        if (grad - winkel).abs() > 1e-9 {
+            winkel = grad;
+        }
+    }
+
+    zeile("masstext");
+    widgets::field_row(ui, jjcad_core::i18n::tr("gui.props.masstext"), |ui| {
+        ui.add_sized(
+            [120.0, 20.0],
+            egui::TextEdit::singleline(&mut masstext)
+                .hint_text(jjcad_core::i18n::tr("gui.props.automatisch")),
+        );
+    });
+
+    match ziel {
+        Ziel::Neu => {
+            gemein_nach_optionen(app, &a);
+            app.options.dim_text = masstext;
+        }
+        Ziel::Auswahl(id) => {
+            gemein_nach_objekt(app, id, &a);
+            let mut params = serde_json::json!({"ids": [id]});
+            let mut geaendert = false;
+            if let Some(map) = params.as_object_mut() {
+                if let Some(e) = &e {
+                    if let EntityKind::DimRadius {
+                        angle,
+                        override_text,
+                        ..
+                    } = &e.kind
+                    {
+                        let alt_text = override_text.clone().unwrap_or_default();
+                        if masstext != alt_text {
+                            map.insert("text".into(), serde_json::json!(masstext));
+                            geaendert = true;
+                        }
+                        if (winkel.to_radians() - *angle).abs() > 1e-9 {
+                            map.insert("angle".into(), serde_json::json!(winkel));
+                            geaendert = true;
+                        }
+                    }
+                }
+            }
+            if geaendert {
+                setzen(app, &params);
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Objektarten, deren Maße aus den Klicks entstehen
 // ---------------------------------------------------------------------------
@@ -4954,6 +5097,7 @@ pub fn mehrfach(app: &mut App, ui: &mut Ui, ids: &[Id]) {
                 Some(EntityKind::Window { .. }) => fenster(app, ui, ziel),
                 Some(EntityKind::Fill { .. }) => fuellflaeche(app, ui, ziel),
                 Some(EntityKind::Dim { .. }) => bemassung(app, ui, ziel),
+                Some(EntityKind::DimRadius { .. }) => radiusbemassung(app, ui, ziel),
                 Some(EntityKind::Volume { .. }) => volumen(app, ui, ziel),
                 Some(EntityKind::Stair { .. }) => treppe(app, ui, ziel),
                 Some(EntityKind::Room { .. }) => raumstempel(app, ui, ziel),
@@ -5122,7 +5266,7 @@ mod tests {
             EntityKind::Door { .. } => "Türblatt",
             EntityKind::Window { .. } => "Fenstermaße",
             EntityKind::Fill { .. } => "Füllung",
-            EntityKind::Dim { .. } => "Maß",
+            EntityKind::Dim { .. } | EntityKind::DimRadius { .. } => "Maß",
             EntityKind::Room { .. } => "Beschriftung",
             EntityKind::Volume { .. } => "Körper",
             EntityKind::Stair { .. } => "Treppenlauf",
@@ -5697,6 +5841,15 @@ mod tests {
             },
         ),
         (
+            "dim.radius",
+            EntityKind::DimRadius {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+                angle: 0.0,
+                override_text: None,
+            },
+        ),
+        (
             "dim.elevation.plan",
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
@@ -5916,6 +6069,7 @@ mod tests {
                     | EntityKind::Window { .. }
                     | EntityKind::Fill { .. }
                     | EntityKind::Dim { .. }
+                    | EntityKind::DimRadius { .. }
                     | EntityKind::Volume { .. }
                     | EntityKind::Stair { .. }
                     | EntityKind::Room { .. }
@@ -6058,6 +6212,12 @@ mod tests {
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
                 heights: Vec::new(),
+            },
+            EntityKind::DimRadius {
+                c: jjcad_core::geom::Vec2::ZERO,
+                r: 500.0,
+                angle: 0.0,
+                override_text: None,
             },
             EntityKind::ElevationPlan {
                 p: jjcad_core::geom::Vec2::ZERO,
