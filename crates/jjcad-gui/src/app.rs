@@ -2318,6 +2318,20 @@ impl App {
                     self.new_document();
                     self.fit_view();
                 }
+                // T0244: Linienwerkzeug mit gesetztem Anfangspunkt — das Feld am
+                // Zeiger zeigt Länge und Winkel; `laengenfeldtippen` setzt
+                // zusätzlich eine getippte Zahl, damit dasselbe Feld
+                // hervorgehoben erscheint.
+                "laengenfeld" | "laengenfeldtippen" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(jjcad_core::geom::Vec2::new(0.0, 0.0));
+                    }
+                    if part.trim() == "laengenfeldtippen" {
+                        self.ui.typed = "1,5".into();
+                    }
+                }
                 "arch" => self.ui.ribbon = RibbonTab::Architektur,
                 "draw" => self.ui.ribbon = RibbonTab::Zeichnen,
                 "dim" => self.ui.ribbon = RibbonTab::Bemassung,
