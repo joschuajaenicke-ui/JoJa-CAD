@@ -886,9 +886,10 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
 - **Abrunden und Phase (T0247)**: Zwei Werkzeuge im Reiter „Ändern" (Gruppe
   Geometrie) bearbeiten eine **Ecke**. Die Ecke ist **ein** Klick, wenn der Zeiger
   sie schon trifft: der **Schnittpunkt zweier Linien** (`ecke::linien_durch` liefert
-  alle Linien im Fangradius, zwei davon bilden die Ecke) oder der **Knick einer
-  Polylinie** (`ecke::polylinien_knoten`; offene Enden und Knicke an Bogenstücken
-  werden gar nicht angeboten). Sonst wählt der erste Klick eine Linie, der zweite
+  alle Linien im Fangradius, zwei davon bilden die Ecke), der **Knick einer
+  Polylinie** (`ecke::polylinien_knoten`) oder die **Naht eines Pfades**
+  (`ecke::pfad_knoten`); offene Enden und Nähte an Bogenstücken werden gar nicht
+  angeboten. Die eine Abfrage für den Zeiger ist `canvas::knick_unter_zeiger`. Sonst wählt der erste Klick eine Linie, der zweite
   die Partnerlinie. Danach das Maß — Abstand des Zeigers vom Eckpunkt per Klick oder
   getippt + Enter. Die getippte Zahl **ist** das Maß (`ecke_bereit` schaltet den
   Tippzweig in `canvas::handle_input`), damit der Radius auch bei ruhendem Zeiger
@@ -897,16 +898,20 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Rechnung auf zwei Schenkeln, `ecke`/`anwenden` arbeiten auf zwei Linien,
   `ecke_polylinie`/`anwenden_polylinie` auf dem Knick einer Polylinie (der
   Scheitelpunkt wird durch die beiden Anschlusspunkte ersetzt, dazwischen steht der
-  Bogen als Bulge — alles in **einem** Objekt). Klick (`canvas::ecke_setzen`),
+  Bogen als Bulge — alles in **einem** Objekt) und `ecke_pfad`/`anwenden_pfad` auf
+  der Naht zweier gerader Stücke (die Nachbarstücke werden gekürzt, ein Bogen- oder
+  Linienstück kommt dazwischen; bei geschlossenen Pfaden schließt es hinten an).
+  Die Objektart entscheidet `canvas::ecke_am_knick`, die Action verzweigt an
+  `EntityKind::Path`. Klick (`canvas::ecke_setzen`),
   Vorschau (`draw_tool_preview`) und die Actions `modify.fillet`/`modify.chamfer`
   (Parameter `ids` + optional `vertex`) rufen dieselben Funktionen. Welcher Teil
   einer Linie stehen bleibt, entscheidet die **Klickstelle** (`picks` im Befehl),
   ohne sie die längere Seite. Das Verbindungsstück erbt Ebene und Stil der ersten
   Linie; beide Linien werden gekürzt. Zu großes Maß, parallele Linien und andere
   Objektarten sind Fehler (kein stiller Erfolg, T0038).
-  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (11 Tests) und
-  `cargo test -p jjcad-gui tests_ecke` (9 Tests); Prüfbilder `--demo abrunden`,
-  `--demo phase` und `--demo knick`.
+  Prüfweg: `cargo test -p jjcad-core --test abrunden_phase` (16 Tests) und
+  `cargo test -p jjcad-gui tests_ecke` (10 Tests); Prüfbilder `--demo abrunden`,
+  `--demo phase`, `--demo knick` und `--demo pfadknick`.
 - **Pfad (T0229)**: Ein Pfad ist eine Kette aus **Linien, Bögen, Ellipsenbögen und
   Splines** (`EntityKind::Path { segments, closed }`, Geometrie in
   `crates/jjcad-core/src/pfad.rs`). Jedes Stück trägt seine volle Geometrie; das Ende
