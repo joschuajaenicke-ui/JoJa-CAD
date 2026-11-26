@@ -105,6 +105,20 @@ fn linie(doc: &Document, id: Id) -> Result<(Vec2, Vec2), String> {
     }
 }
 
+/// Schnittpunkt der beiden Geraden — die Ecke, ohne die Zeichnung zu ändern.
+///
+/// Das Werkzeug prüft damit schon beim zweiten Klick, ob das Paar überhaupt
+/// eine Ecke bildet; ein Fehler hier ist der Grund, warum kein Radius kommt.
+pub fn schnittpunkt(doc: &Document, id_a: Id, id_b: Id) -> Result<Vec2, String> {
+    if id_a == id_b {
+        return Err("Es braucht zwei verschiedene Linien".into());
+    }
+    let (a1, a2) = linie(doc, id_a)?;
+    let (b1, b2) = linie(doc, id_b)?;
+    line_line(a1, a2, b1, b2, true, true)
+        .ok_or_else(|| "Die Linien sind parallel — keine Ecke".to_string())
+}
+
 /// Die Seite einer Linie, die stehen bleibt, und ihre Richtung vom Eckpunkt aus.
 ///
 /// `pick` ist der Klickpunkt des Nutzers: die Seite, auf der er liegt, bleibt.

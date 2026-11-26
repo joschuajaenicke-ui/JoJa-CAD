@@ -449,6 +449,18 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
                 3.0,
             ));
         }
+        // Abrunden (T0247): die Ecke ist durch einen Bogen ersetzt.
+        "fillet" => {
+            i.line(3.0, 18.0, 8.0, 18.0);
+            i.line(12.0, 14.0, 12.0, 4.0);
+            i.arc(8.0, 14.0, 4.0, 0.0, std::f32::consts::FRAC_PI_2);
+        }
+        // Phase (T0247): dieselbe Ecke, gerade abgeschnitten.
+        "chamfer" => {
+            i.line(3.0, 18.0, 8.0, 18.0);
+            i.line(8.0, 18.0, 12.0, 14.0);
+            i.line(12.0, 14.0, 12.0, 4.0);
+        }
         // Flächen vereinigen: zwei Flächen wachsen an der gemeinsamen Kante
         // zusammen (der Steg dazwischen ist die Verbindung).
         "union" => {

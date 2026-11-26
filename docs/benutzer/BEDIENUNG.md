@@ -445,7 +445,18 @@ ausgeblendet.
   (Der erste Rechtsklick legt hier dieselbe **Hilfslinie** an wie in jedem Werkzeug — der
   zweite beendet die Reihe.)
   Andere Objektarten (Wand, Kreis, Text …) sind keine Vorlage.
-- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
+- **Abrunden und Phase** (Ändern ▸ Geometrie, T0247): zwei **Linien** nacheinander
+  anklicken, die sich schneiden; der Schnittpunkt ist die Ecke. Danach bestimmt der
+  Mauszeiger das Maß — der Abstand vom Eckpunkt —, der Klick setzt es; stattdessen lässt
+  es sich tippen und mit `Enter` bestätigen (dieselbe Längeneingabe wie überall, der
+  Zeiger darf dabei auf dem Eckpunkt stehen). Die Vorschau zeigt die fertige Ecke:
+  gekürzte Linien und den Bogen (**Abrunden**) bzw. die gerade Verbindung (**Phase**).
+  Welcher Teil einer Linie stehen bleibt, entscheidet die **Klickstelle** — geklickt wird
+  die Seite, die erhalten bleibt. Abrunden braucht einen Radius, die Phase ein Maß auf
+  beiden Schenkeln; ist es für eine der Linien zu groß, meldet der Chat „Das Maß ist für
+  die kürzere Linie zu groß" und die Zeichnung bleibt unverändert. Nach dem Setzen ist das Werkzeug für das
+  nächste Paar bereit, `ESC` beendet es.
+- **Linien** werden als Kapsel gezeichnet:- **Linien** werden als Kapsel gezeichnet: Rechteck plus Halbkreis an beiden Enden. Dadurch sind
   auch die Übergänge in Polylinien, Bögen und an Wandanschlüssen rund statt eckig.
 - **Ribbon** lässt sich über den Pfeil rechts in der Kopfzeile einklappen; die Reiter bleiben sichtbar.
 - **Linienstärke neuer Objekte** (Einstellungen ▸ Voreinstellungen): eine Zeile je Objektart
