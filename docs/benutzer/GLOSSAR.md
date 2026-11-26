@@ -54,7 +54,7 @@ Steht rechts „nicht", dann ist das Wort im Projekt verpönt (auch in der Oberf
 | **Umgrenzung** | Die Punktfolge, die eine Füllfläche definiert | Umriss, Kontur, Polygon (nur wenn wirklich gemeint) |
 | **Umrandung** | Die gezeichnete Linie entlang der Umgrenzung einer Füllfläche; in den Eigenschaften an/aus, Vorgabe je Erstellmodus | Randlinie, Rahmen, Kontur |
 | **Farbeimer** | Werkzeug: Klick in eine leere Fläche, Umgrenzung wird automatisch ermittelt | Füllwerkzeug, Zauberstab, Paint-Bucket |
-| **Keine Füllung** | Zustand von Wand, Füllfläche und Volumen, in dem **gar keine** Fläche gezeichnet wird — nur die Umrandung, kein Muster. Nicht dasselbe wie *Standard* (Füllung im Vorgabeton); gespeichert als `no_fill` (T0242) | ohne Schraffur, transparent |
+| **Keine Füllung** | Zustand von Wand, Füllfläche und Volumen ohne **Flächenton** — das Muster (Schraffur) und die Umrandung bleiben. Nicht dasselbe wie *Standard* (Füllung im Vorgabeton); gespeichert als `no_fill` (T0242) | ohne Flächenfarbe, transparent hinterlegt |
 | **Griff** | Anfasser zum Ziehen an Enden, Ecken und Kantenmitten eines ausgewählten Objekts | Handle, Punkt, Anker |
 | **Fang** | Einrasten auf Punkten/Geometrie beim Zeichnen | Snap, Einrasten |
 | **Objektfang** | Fang auf vorhandene Geometrie: END (Endpunkt), SCHN (Schnitt), MIT (Mitte), ZEN (Zentrum), QUA (Quadrant), LOT (Lot), TAN (Tangential an Kreis/Bogen), NÄC (nächster Punkt), RAS (Raster), POL (Polar), WHB (Winkelhalbierende im Scheitel zweier Linien) | Fangmodus, Fangart |
