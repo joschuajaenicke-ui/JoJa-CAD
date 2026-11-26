@@ -40,7 +40,10 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    Messpunkte, der dritte Klick legt die Maßlinie parallel fest, weitere Klicks
    hängen Messpunkte an. `Enter` **oder `Esc`** beendet die Eingabe — `Esc`
    **bestätigt** sie dabei, statt die gesetzten Punkte zu verwerfen (wie beim
-   Text); ohne einen einzigen Klick bricht `Esc` ab. Einzelmaß und Maßkette
+   Text); ohne einen einzigen Klick bricht `Esc` ab. **Drehen** (`R`) schaltet
+   während der Eingabe zwischen *Waagerecht* und *Senkrecht* um — die gesetzten
+   Punkte und die Lage der Maßlinie bleiben stehen, die Kette entsteht in der
+   neuen Richtung. Einzelmaß und Maßkette
    sind dasselbe Element: ein Einzelmaß ist die Kette aus zwei Messpunkten.
    **Punkt hinzufügen**/**Punkt entfernen** arbeiten in **zwei Schritten**:
    erst die Maßkette anklicken (sie wird blau markiert), dann den Messpunkt —

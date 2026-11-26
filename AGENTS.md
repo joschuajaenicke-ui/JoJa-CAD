@@ -667,6 +667,18 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   für jeden Winkel. Alte Dateien rechnet `persist::migrate_legacy_dims` beim
   Laden um (`axis` → `angle`). Prüfweg: `cargo test -p jjcad-core --test
   masskette_rotieren`, Prüfbild `--demo masskettengedreht`.
+- **Richtung während der Eingabe drehen (T0250)**: Läuft ein Maßketten-Werkzeug
+  (`dim.chain.h`/`.v`), schaltet die Funktion „Drehen“ (`modify.rotate`)
+  zwischen waagerecht und senkrecht um, statt das Drehwerkzeug zu starten.
+  Der Haken sitzt in `App::start_tool` (`App::masskette_drehen`) — damit gilt
+  er für jeden Startweg (Taste `R`, Ribbon, Hotbar). Der Werkzeugpuffer bleibt
+  stehen: die Lage der Maßlinie (`pts[0]`) und die Messpunkte liegen in beiden
+  Modi an derselben Stelle, der nächste Klick bzw. ESC legt die Kette in der
+  neuen Richtung an; `ToolOptions::dim_axis` zieht mit, das Eigenschaften-Panel
+  zeigt sie sofort. „Direkt“ hat keine feste Richtung und bleibt unberührt
+  (dort startet Drehen wie bisher das Drehwerkzeug). Prüfweg:
+  `cargo test -p jjcad-gui tests_masskette_drehen` (4 Tests, darunter der echte
+  Tastendruck `R`), Prüfbild `--demo masskettewechsel`.
 - **Verlängerung zu den Messpunkten (T0226)**: Die Maßhilfslinien von den
   Messpunkten zur Maßlinie sind ein Schalter je Maßkette
   (`EntityKind::Dim::ext_lines`, `#[serde(default)]`, Vorgabe **aus**). Im

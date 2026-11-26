@@ -718,6 +718,17 @@ impl DimModus {
         }
     }
 
+    /// Der um 90° gedrehte Modus (T0250): waagerecht ↔ senkrecht.
+    ///
+    /// „Direkt“ hat keine feste Richtung — dort gibt es nichts zu drehen.
+    pub fn gedreht(self) -> Option<Self> {
+        match self {
+            DimModus::Waagerecht => Some(DimModus::Senkrecht),
+            DimModus::Senkrecht => Some(DimModus::Waagerecht),
+            DimModus::Direkt => None,
+        }
+    }
+
     pub fn label(self) -> &'static str {
         match self {
             DimModus::Waagerecht => rb("ui.dimmode.waagerecht"),
@@ -3482,6 +3493,15 @@ impl App {
                     self.waehle_dim_modus(DimModus::Waagerecht);
                     self.started_at = 3.0;
                 }
+                // Richtung während der Eingabe drehen (T0250): das Werkzeug
+                // läuft waagerecht, „Drehen“ schaltet auf senkrecht — die
+                // Vorschau zeigt die Kette in der neuen Richtung.
+                "masskettewechsel" => {
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    self.waehle_dim_modus(DimModus::Waagerecht);
+                    self.start_tool("modify.rotate");
+                    self.started_at = 3.0;
+                }
                 // Maßkette „Direkt“: zwei Messpunkte stehen, der nächste Klick
                 // setzt die Maßlinie parallel — die Vorschau hängt am Zeiger
                 // (Bildmitte).
@@ -5893,6 +5913,34 @@ impl App {
         Some(erste)
     }
 
+    /// T0250: „Drehen“ während einer laufenden Maßkette schaltet zwischen
+    /// waagerecht und senkrecht um.
+    ///
+    /// Der Werkzeugpuffer bleibt stehen — die Lage der Maßlinie und die
+    /// Messpunkte liegen in beiden Modi an derselben Stelle (`pts[0]` ist die
+    /// Maßlinie, alles Weitere Messpunkte). Der nächste Klick bzw. ESC legt die
+    /// Kette damit in der neuen Richtung an. Meldet, ob umgeschaltet wurde; ein
+    /// „Direkt“-Maß hat keine feste Richtung und bleibt unberührt.
+    fn masskette_drehen(&mut self) -> bool {
+        let Some(neu) = self
+            .tool
+            .as_ref()
+            .and_then(|t| DimModus::aus_werkzeug(&t.action))
+            .and_then(DimModus::gedreht)
+        else {
+            return false;
+        };
+        if let Some(t) = self.tool.as_mut() {
+            t.action = neu.werkzeug().to_string();
+        }
+        self.options.dim_axis = Some(neu.axis());
+        self.mitteilung(match neu {
+            DimModus::Senkrecht => jjcad_core::i18n::tr("gui.app.masskette_senkrecht"),
+            _ => jjcad_core::i18n::tr("gui.app.masskette_waagerecht"),
+        });
+        true
+    }
+
     pub fn start_tool(&mut self, id: &str) {
         if actions::action(id).is_none() {
             return;
@@ -5915,6 +5963,12 @@ impl App {
                 }
                 _ => {}
             }
+        }
+        // T0250: Während eine Maßkette platziert wird, schaltet die Funktion
+        // „Drehen“ zwischen waagerecht und senkrecht um — sie startet nicht
+        // das Drehwerkzeug. Die gesetzten Punkte bleiben dabei stehen.
+        if id == "modify.rotate" && self.masskette_drehen() {
+            return;
         }
         // T0180: Eine neue Zeichenfunktion schließt das offene Kontextmenü. Der
         // Klick auf Ribbon/Hotbar täte das ohnehin (Klick außerhalb), ein
@@ -15612,6 +15666,127 @@ mod tests_masskette_esc {
             app.selection(),
             &[id],
             "die bearbeitete Maßkette bleibt ausgewählt"
+        );
+    }
+}
+
+mod tests_masskette_drehen {
+    //! T0250: Während der Platzierung schaltet die Funktion „Drehen“
+    //! (`modify.rotate`) zwischen waagerecht und senkrecht um, statt das
+    //! Drehwerkzeug zu starten. Die gesetzten Punkte bleiben dabei stehen.
+
+    use super::*;
+    use jjcad_core::geom::v;
+
+    fn app_mit_kette(action: &str) -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        app.start_tool(action);
+        if let Some(t) = app.tool.as_mut() {
+            t.pts.push(v(0.0, -900.0)); // Lage der Maßlinie
+            t.pts.push(v(0.0, 0.0));
+            t.pts.push(v(2000.0, 0.0));
+        }
+        app
+    }
+
+    /// Drehen schaltet den Modus um und lässt Maßlinie wie Messpunkte stehen;
+    /// ein zweiter Druck schaltet zurück.
+    #[test]
+    fn drehen_schaltet_die_richtung_und_behaelt_die_punkte() {
+        let mut app = app_mit_kette("dim.chain.h");
+        let vorher = app.tool.as_ref().unwrap().pts.clone();
+
+        app.start_tool("modify.rotate");
+        let t = app.tool.as_ref().expect("die Maßkette muss weiterlaufen");
+        assert_eq!(t.action, "dim.chain.v", "Drehen muss senkrecht machen");
+        assert_eq!(t.pts, vorher, "gesetzte Punkte bleiben stehen");
+        assert_eq!(
+            app.options.dim_axis,
+            Some(DimAxis::Y),
+            "das Panel zeigt die neue Richtung"
+        );
+
+        app.start_tool("modify.rotate");
+        assert_eq!(
+            app.tool.as_ref().unwrap().action,
+            "dim.chain.h",
+            "ein zweiter Druck schaltet zurück"
+        );
+        assert_eq!(app.options.dim_axis, Some(DimAxis::X));
+    }
+
+    /// Der erste Klick setzt die Lage der Maßlinie; danach gedreht, wird die
+    /// Kette in der neuen Richtung angelegt — gemessen am gespeicherten Winkel.
+    #[test]
+    fn die_gedrehte_kette_wird_senkrecht_angelegt() {
+        let mut app = app_mit_kette("dim.chain.h");
+        app.start_tool("modify.rotate");
+        app.escape_pressed();
+
+        let kette = app
+            .doc()
+            .ents()
+            .iter()
+            .find(|e| matches!(e.kind, EntityKind::Dim { .. }))
+            .expect("ESC muss die Maßkette anlegen");
+        match &kette.kind {
+            EntityKind::Dim { pts, angle, .. } => {
+                assert_eq!(pts.len(), 2, "{pts:?}");
+                assert!(
+                    (*angle - std::f64::consts::FRAC_PI_2).abs() < 1e-9,
+                    "die gedrehte Kette steht senkrecht, Winkel {angle}"
+                );
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    /// Gegenprobe: „Direkt“ hat keine feste Richtung — dort startet Drehen
+    /// wie bisher das Drehwerkzeug (kein stiller Moduswechsel).
+    #[test]
+    fn direktes_mass_bleibt_unberuehrt() {
+        let mut app = app_mit_kette("dim.chain.d");
+        app.start_tool("modify.rotate");
+        assert_eq!(app.tool.as_ref().unwrap().action, "modify.rotate");
+    }
+
+    /// Der Weg des Nutzers: `R` ist die Vorgabe der Funktion „Drehen“, der
+    /// Druck läuft über `run_action` → `start_tool`. Geprüft am echten
+    /// Tastendruck über `App::ui` (derselbe Weg wie im Betrieb).
+    #[test]
+    fn die_taste_r_dreht_die_laufende_masskette() {
+        fn rahmen(events: Vec<egui::Event>) -> egui::RawInput {
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(1600.0, 1000.0),
+                )),
+                events,
+                ..Default::default()
+            }
+        }
+        let ctx = egui::Context::default();
+        let mut app = App::with_ctx(ctx.clone());
+        app.start_tool("dim.chain.h");
+        app.tool.as_mut().unwrap().pts = vec![v(0.0, -900.0), v(0.0, 0.0), v(2000.0, 0.0)];
+
+        let _ = ctx.run(rahmen(vec![]), |ctx| app.ui(ctx));
+        let _ = ctx.run(
+            rahmen(vec![egui::Event::Key {
+                key: egui::Key::R,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }]),
+            |ctx| app.ui(ctx),
+        );
+
+        assert_eq!(
+            app.tool.as_ref().map(|t| t.action.as_str()),
+            Some("dim.chain.v"),
+            "R muss die Maßkette drehen, nicht das Drehwerkzeug starten"
         );
     }
 }
