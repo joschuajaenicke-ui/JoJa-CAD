@@ -183,8 +183,10 @@ fn akzent_jetzt() -> Farbakzent {
         .unwrap_or_else(|| akzent_aus_index(AKZENT_AKTIV.load(Ordering::Relaxed)))
 }
 
-/// Akzent setzen — prozessweit **und** für den aufrufenden Faden.
+/// Akzent setzen — prozessweit **und** für den aufrufenden Faden (im Testbau
+/// nur für den Faden, s. [`setze_hell`]).
 fn setze_akzent(akzent: Farbakzent) {
+    #[cfg(not(test))]
     AKZENT_AKTIV.store(akzent_index(akzent), Ordering::Relaxed);
     AKZENT_IM_FADEN.with(|z| z.set(Some(akzent)));
 }
@@ -214,7 +216,15 @@ fn hell_jetzt() -> bool {
 }
 
 /// Design setzen — prozessweit **und** für den aufrufenden Faden.
+///
+/// Im **Testbau** schreibt der Faden nur seine eigene Wahl: die Tests laufen in
+/// Fäden nebeneinander, und ein Schreibzugriff auf den prozessweiten Wert ließ
+/// fremde Tests mitten im Bild das Design wechseln (T0250, gemessen an
+/// `widgets::icontests::ausrichtungsfelder_haben_feldgrund`: gezeichnet im
+/// hellen Design, gelesen im dunklen). In der Anwendung gibt es einen
+/// Zeichenfaden — dort ist beides dasselbe.
 fn setze_hell(hell: bool) {
+    #[cfg(not(test))]
     HELL_AKTIV.store(hell, Ordering::Relaxed);
     HELL_IM_FADEN.with(|z| z.set(Some(hell)));
 }
@@ -424,6 +434,9 @@ pub fn zeichenfarbe(rolle: Zeichenfarbe) -> Color32 {
 /// Bild, ein Neustart ist nicht nötig. Eine leere Zuordnung stellt alle
 /// Vorgaben wieder her.
 pub fn set_zeichenfarben(farben: &BTreeMap<Zeichenfarbe, Color32>, ctx: &egui::Context) {
+    // Im Testbau gilt die Wahl nur im aufrufenden Faden — sonst überschreibt
+    // ein Test die Zeichenfarben des anderen mitten in der Prüfung (T0250).
+    #[cfg(not(test))]
     if let Ok(mut zelle) = ZEICHENFARBEN.write() {
         *zelle = farben.clone();
     }
