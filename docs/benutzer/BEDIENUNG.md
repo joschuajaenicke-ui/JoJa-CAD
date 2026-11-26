@@ -317,12 +317,14 @@ ausgeblendet.
   **„Art“** darunter listet genau die Arten der Auswahl; eine Wahl lässt nur deren Objekte
   gewählt — aus Wand und Linie wird so die Wand, und das Panel zeigt danach den
   Wand-Abschnitt.
-  **Keine Füllung** (T0242): Die Zeile **Füllfarbe** hat drei Werte — **Keine Füllung**,
-  **Standard** und jede gewählte Farbe. *Keine Füllung* lässt die Fläche weg: eine Wand zeichnet
-  dann nur ihre Kanten, eine Füllfläche nur ihre **Umrandung** (ist sie aus, bleibt von der
-  Fläche nichts sichtbar). Ein gewähltes **Muster** schaltet die Füllung wieder ein. *Standard*
-  ist dagegen eine Füllung mit Vorgabeton — bei einer Wand der graue Wandton, bei einer
-  Füllfläche die aufgehellte Linienfarbe.
+  **Keine Füllung** (T0242): Die Zeile **Füllfarbe** hat drei Werte — **Standard**, **Keine
+  Füllung** und jede gewählte Farbe (Standard steht oben). *Keine Füllung* nimmt **nur den
+  Flächenton** weg: eine Wand zeichnet dann ihre Kanten und, falls gewählt, ihre Schraffur; eine
+  Füllfläche ihr **Muster** und ihre **Umrandung** — nur die Fläche dahinter fehlt. Muster und
+  Fläche sind also unabhängig: eine Schraffur ohne Hintergrundfläche ist möglich; eine
+  Vollfläche ohne Ton zeigt nur ihre Umrandung. *Standard* ist dagegen eine Füllung mit
+  Vorgabeton — bei einer Wand der graue Wandton, bei einer Füllfläche die aufgehellte
+  Linienfarbe.
 - **Farbwahl** (T0183): Die Farbvorgaben stehen in **drei Gruppen** mit eigener Überschrift,
   je zwei Spalten. **Bauteile** trägt die drei Bedeutungfarben der Bauzeichnung — Schwarz
   (Bestand), Rot (Neubau), Gelb (Abbruch). **Gestaltung** ist der geschlossene Farbkreis für
