@@ -3230,6 +3230,47 @@ fn paint_vorschau_dl(
     }
 }
 
+/// Der Punkt, den die Werkzeug-Vorschau als „Zeiger" benutzt (T0246).
+///
+/// Ohne Eingabe ist das der Fangpunkt selbst. Steht eine **Länge** im
+/// Tippepuffer, liegt der Vorschau-Punkt in dieser Entfernung auf der
+/// Zeigerrichtung — dieselbe Rechnung, die `Enter` beim Absetzen anwendet
+/// (`letzte + Richtung × getippte Länge`). Vorher zeigte die Vorschau weiter
+/// bis zum Mauszeiger, das Feld daneben aber schon die getippte Zahl.
+///
+/// Nicht hierher gehören die Zahlen, die **keine** Länge sind: Koordinaten
+/// (`x;y` — Semikolon), der Winkel beim Drehen und das Maß von Abrunden/Phase
+/// (dort steht die zweite Linie schon fest). Ebenso bleibt es beim Zeiger,
+/// solange kein letzter Punkt steht oder der Zeiger keine Richtung gibt (er
+/// liegt genau auf dem letzten Punkt).
+pub fn vorschau_punkt(app: &App, zeiger: Option<V2>) -> Option<V2> {
+    let w = zeiger?;
+    let eingabe = app.ui.typed.trim();
+    let Some(tool) = app.tool.as_ref() else {
+        return Some(w);
+    };
+    if eingabe.is_empty() || app.hilfslinie_modus || eingabe.contains(';') {
+        return Some(w);
+    }
+    if ist_drehwerkzeug(&tool.action) || (ist_eckenwerkzeug(&tool.action) && tool.obj2.is_some()) {
+        return Some(w);
+    }
+    let Some(start) = tool.pts.last().copied() else {
+        return Some(w);
+    };
+    let Some(laenge) = jjcad_core::units::parse_length(eingabe, app.unit()) else {
+        return Some(w);
+    };
+    if laenge <= 0.0 {
+        return Some(w);
+    }
+    let richtung = (w - start).normalized();
+    if richtung.len() <= 0.0 {
+        return Some(w);
+    }
+    Some(start + richtung * laenge)
+}
+
 fn draw_tool_preview(
     app: &mut App,
     p: &Painter,
@@ -3247,7 +3288,9 @@ fn draw_tool_preview(
     ) {
         app.paint.zuruecksetzen();
     }
-    let Some(cursor) = snapped else {
+    // T0246: Mit getippter Länge endet die Vorschau in dieser Entfernung auf
+    // der Zeigerrichtung — sie zeigt damit, was `Enter` setzen wird.
+    let Some(cursor) = vorschau_punkt(app, snapped) else {
         app.paint.zuruecksetzen();
         return;
     };
@@ -20643,6 +20686,162 @@ mod tests_zeigerfeld {
         assert!(
             !tipp_rect.intersects(icon_rect(zeiger)),
             "Tippfeld und Werkzeug-Icon überlagern sich: {tipp_rect:?}"
+        );
+    }
+}
+#[cfg(test)]
+mod tests_laengenvorschau {
+    //! Vorschau mit getippter Länge (T0246).
+    //!
+    //! Wer eine Länge tippt, sieht sie im Feld am Zeiger; die Vorschau zeigte
+    //! aber weiter bis zum Mauszeiger. Geprüft wird die eine Rechnung
+    //! (`vorschau_punkt`) und am gerenderten Bild, dass die Vorschau-Linie in
+    //! der getippten Entfernung endet.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    /// Linienwerkzeug mit Anfangspunkt im Ursprung, Einheit Millimeter, alle
+    /// Fänge aus — der Zeigerpunkt ist damit genau der Mauszeiger.
+    fn app_mit_linienanfang() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        assert!(
+            run(
+                &mut app,
+                "doc.settings",
+                json!({"input_unit": "mm", "snap": {
+                    "ortho": false, "polar": false, "grid": false,
+                    "endpoint": false, "midpoint": false, "center": false,
+                    "intersection": false, "perpendicular": false,
+                    "nearest": false, "wall_edges": false
+                }}),
+            ),
+            "Einstellungen nicht gesetzt"
+        );
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app
+    }
+
+    fn rahmen(app: &mut App, zeiger: Option<Pos2>, tippen: Option<&str>) -> egui::FullOutput {
+        let ctx = app.ctx.clone();
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        if let Some(t) = tippen {
+            raw.events.push(egui::Event::Text(t.to_string()));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Die Vorschau-Linie, die am Anfangspunkt beginnt (Farbe der Vorschau).
+    fn vorschau_linie(out: &egui::FullOutput, start: Pos2) -> Option<(Pos2, Pos2)> {
+        fn suche(s: &egui::Shape, start: Pos2, treffer: &mut Option<(Pos2, Pos2)>) {
+            match s {
+                egui::Shape::LineSegment { points, stroke } => {
+                    let farbe = Palette::vorschau().gamma_multiply(0.9);
+                    let farbe_ok = matches!(
+                        stroke.color,
+                        egui::epaint::ColorMode::Solid(c) if c == farbe
+                    );
+                    if farbe_ok && points[0].distance(start) < 1.5 {
+                        *treffer = Some((points[0], points[1]));
+                    }
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|s| suche(s, start, treffer)),
+                _ => {}
+            }
+        }
+        let mut treffer = None;
+        for cs in &out.shapes {
+            suche(&cs.shape, start, &mut treffer);
+        }
+        treffer
+    }
+
+    /// Kern des Tickets: „1,5" auf der Zeigerrichtung ergibt den Punkt in
+    /// 1,5 m — nicht den Mauszeiger.
+    #[test]
+    fn getippte_laenge_setzt_den_vorschau_punkt_auf_diese_entfernung() {
+        let mut app = app_mit_linienanfang();
+        let zeiger = V2::new(3000.0, 4000.0);
+        assert_eq!(
+            vorschau_punkt(&app, Some(zeiger)),
+            Some(zeiger),
+            "ohne Eingabe zeigt die Vorschau zum Zeiger"
+        );
+
+        app.ui.typed = "1500".into();
+        let p = vorschau_punkt(&app, Some(zeiger)).expect("kein Vorschau-Punkt");
+        // Richtung (3, 4)/5 = (0,6; 0,8), Länge 1500 mm.
+        assert!(
+            (p.x - 900.0).abs() < 1e-6 && (p.y - 1200.0).abs() < 1e-6,
+            "Vorschau-Punkt steht bei {p:?}, erwartet (900, 1200)"
+        );
+    }
+
+    /// Die Zahlen, die keine Länge sind, lassen die Vorschau am Zeiger.
+    #[test]
+    fn winkel_koordinaten_und_eckenmass_bleiben_beim_zeiger() {
+        let zeiger = V2::new(3000.0, 4000.0);
+
+        // Koordinate „x;y" (Semikolon).
+        let mut app = app_mit_linienanfang();
+        app.ui.typed = "100;200".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Drehen: die Zahl ist ein Winkel in Grad.
+        let mut app = app_mit_linienanfang();
+        app.start_tool("modify.rotate");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app.ui.typed = "30".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Ohne letzter Punkt gibt es keine Richtung.
+        let mut app = app_mit_linienanfang();
+        app.tool.as_mut().unwrap().pts.clear();
+        app.ui.typed = "1500".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+    }
+
+    /// Am gerenderten Bild: die Vorschau-Linie endet in der getippten
+    /// Entfernung statt am Mauszeiger.
+    #[test]
+    fn vorschau_linie_endet_in_der_getippten_entfernung() {
+        let mut app = app_mit_linienanfang();
+        app.set_view(View {
+            center: V2::new(0.0, 0.0),
+            zoom: 0.2,
+            rot: 0.0,
+        });
+        rahmen(&mut app, None, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let zeiger = start + Vec2::new(200.0, 0.0);
+
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie am Zeiger");
+        assert!(
+            (ende.x - zeiger.x).abs() < 1.5 && (ende.y - zeiger.y).abs() < 1.5,
+            "ohne Eingabe endet die Vorschau nicht am Zeiger: {ende:?}"
+        );
+
+        // Das erste Bild nimmt nur die Ziffern an (gezeichnet wird vor der
+        // Eingabe), das zweite zeigt die Vorschau mit der getippten Länge.
+        let _ = rahmen(&mut app, Some(zeiger), Some("800"));
+        assert_eq!(app.ui.typed, "800", "die Ziffern landen nicht im Tippepuffer");
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie mit Eingabe");
+        let erwartet = world_to_screen(flaeche, app.current_view(), V2::new(800.0, 0.0));
+        assert!(
+            (ende.x - erwartet.x).abs() < 1.5 && (ende.y - erwartet.y).abs() < 1.5,
+            "die Vorschau endet bei {ende:?}, erwartet {erwartet:?} (800 mm)"
         );
     }
 }
