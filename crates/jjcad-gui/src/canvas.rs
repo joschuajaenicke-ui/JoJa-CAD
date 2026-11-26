@@ -4493,7 +4493,7 @@ fn draw_tool_preview(
                     // Polylinien-Knick oder Linienpaar — dieselben Rechnungen
                     // wie der Klick in `ecke_setzen`.
                     let gerechnet = if let (Some(id), Some(knoten)) = (tool.obj, tool.knoten) {
-                        jjcad_core::ecke::ecke_polylinie(app.doc(), id, knoten, mass, art)
+                        ecke_am_knick(app.doc(), id, knoten, mass, art)
                     } else if let (Some(a), Some(b)) = (tool.obj, tool.obj2) {
                         jjcad_core::ecke::ecke(
                             app.doc(),
@@ -7755,7 +7755,34 @@ fn ist_eckenwerkzeug(action: &str) -> bool {
     matches!(action, "modify.fillet" | "modify.chamfer")
 }
 
-/// Ist die Ecke des Werkzeugs schon bestimmt (Paar oder Polylinien-Knick)?
+/// Der Knick unter dem Zeiger — Polylinie **oder** Pfad. Beide führen ihre
+/// Scheitelpunkte selbst; was der nächste Klick wählt, entscheidet diese eine
+/// Abfrage, damit Werkzeug, Vorschau und Trefferbild dasselbe meinen.
+fn knick_unter_zeiger(
+    doc: &jjcad_core::Document,
+    bei: V2,
+    tol: f64,
+) -> Option<(jjcad_core::Id, usize, V2)> {
+    jjcad_core::ecke::polylinien_knoten(doc, bei, tol)
+        .or_else(|| jjcad_core::ecke::pfad_knoten(doc, bei, tol))
+}
+
+/// Die Eckrechnung am Knick — Polylinie oder Pfad, je nach Objektart. Die
+/// Auswahl des Objekts sagt es; geraten wird nicht.
+fn ecke_am_knick(
+    doc: &jjcad_core::Document,
+    id: jjcad_core::Id,
+    knoten: usize,
+    mass: f64,
+    art: jjcad_core::ecke::EckeArt,
+) -> Result<jjcad_core::ecke::Ecke, String> {
+    match doc.entity(id).map(|e| &e.kind) {
+        Some(EntityKind::Path { .. }) => jjcad_core::ecke::ecke_pfad(doc, id, knoten, mass, art),
+        _ => jjcad_core::ecke::ecke_polylinie(doc, id, knoten, mass, art),
+    }
+}
+
+/// Ist die Ecke des Werkzeugs schon bestimmt (Paar oder Knick)?
 fn ecke_bereit(tool: &Tool) -> bool {
     tool.obj2.is_some() || tool.knoten.is_some()
 }
@@ -7930,7 +7957,7 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     // hervor, was der Klick wählen würde — der Knick einer Polylinie oder eine
     // Linie. Sonst ist nicht zu sehen, worauf die Abrundung sich bezieht.
     if ist_eckenwerkzeug(&tool.action) && !ecke_bereit(tool) {
-        if let Some((id, _, _)) = jjcad_core::ecke::polylinien_knoten(app.doc(), w, tol) {
+        if let Some((id, _, _)) = knick_unter_zeiger(app.doc(), w, tol) {
             return Some(id);
         }
         return snap::hit_test(app.doc(), w, tol, None).filter(|id| {
@@ -8954,9 +8981,7 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
             let tol = (8.0 / app.current_view().zoom).max(0.5);
             if !ecke_bereit(&tool) {
                 // 1) Knick einer Polylinie — ein Klick auf den Scheitelpunkt.
-                if let Some((id, knoten, punkt)) =
-                    jjcad_core::ecke::polylinien_knoten(app.doc(), w, tol)
-                {
+                if let Some((id, knoten, punkt)) = knick_unter_zeiger(app.doc(), w, tol) {
                     tool.obj = Some(id);
                     tool.obj2 = None;
                     tool.knoten = Some(knoten);
@@ -19808,6 +19833,42 @@ mod tests_ecke {
         // Werkzeug ist für den nächsten Knick bereit.
         let t = app.tool.as_ref().unwrap();
         assert!(t.obj.is_none() && t.knoten.is_none() && t.pts.is_empty());
+    }
+
+    /// Auch der Knick eines **Pfades** ist mit einem Klick gewählt.
+    #[test]
+    fn klick_auf_den_pfad_knick_waehlt_den_pfad() {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = jjcad_core::units::Unit::Mm;
+        run(
+            &mut app,
+            "draw.path",
+            json!({"pts": [[0.0, 0.0], [1000.0, 0.0], [1000.0, 1000.0]], "closed": false}),
+        );
+        let pf = *app.session().last_created.first().unwrap();
+        app.start_tool("modify.fillet");
+
+        tool_click(&mut app, V2::new(1000.0, 0.0));
+        let t = app.tool.as_ref().expect("Werkzeug läuft");
+        assert_eq!(t.obj, Some(pf), "der Pfad ist gewählt");
+        assert_eq!(t.knoten, Some(1), "die Naht zwischen den ersten Stücken");
+        assert!(t.obj2.is_none(), "ein Pfad braucht kein zweites Objekt");
+
+        // Maß per Klick: 200 mm vom Knick entfernt.
+        tool_click(&mut app, V2::new(1200.0, 0.0));
+        let stuecke = match &app.doc().entity(pf).unwrap().kind {
+            EntityKind::Path { segments, .. } => segments.clone(),
+            other => panic!("kein Pfad mehr: {other:?}"),
+        };
+        assert_eq!(stuecke.len(), 3, "ein Stück kommt hinzu");
+        match &stuecke[1] {
+            jjcad_core::pfad::PathSeg::Arc { r, .. } => assert!((r - 200.0).abs() < 1e-6),
+            other => panic!("kein Bogenstück: {other:?}"),
+        }
+        assert!(nahe(stuecke[0].end(), 800.0, 0.0), "{:?}", stuecke[0].end());
+        assert!(nahe(stuecke[2].start(), 1000.0, 200.0), "{:?}", stuecke[2].start());
+        let t = app.tool.as_ref().unwrap();
+        assert!(t.obj.is_none() && t.knoten.is_none());
     }
 
     /// Getipptes Maß am Polylinien-Knick geht denselben Weg.

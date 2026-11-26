@@ -4140,21 +4140,25 @@ impl App {
                 }
                 // Knick einer Polylinie (T0247): die Ecke ist mit dem
                 // Scheitelpunkt schon gewählt, es fehlt nur das Maß.
-                "knick" | "abrundenknick" | "phaseknick" => {
+                "knick" | "abrundenknick" | "phaseknick" | "pfadknick"
+                | "abrundenpfad" | "phasepfad" => {
                     let u = self.unit().mm();
+                    // Pfad oder Polylinie: beide tragen einen Knick, den das
+                    // Werkzeug mit einem Klick wählt (T0247).
+                    let pfad = part.trim().contains("pfad");
+                    let werkzeug = if part.trim().contains("phase") {
+                        "modify.chamfer"
+                    } else {
+                        "modify.fillet"
+                    };
                     let antwort = self.session_mut().execute(
-                        "draw.polyline",
+                        if pfad { "draw.path" } else { "draw.polyline" },
                         &serde_json::json!({
                             "pts": [[500.0 / u, 500.0 / u], [4500.0 / u, 500.0 / u],
                                     [4500.0 / u, 4500.0 / u]],
                             "closed": false
                         }),
                     );
-                    let werkzeug = if part.trim() == "phaseknick" {
-                        "modify.chamfer"
-                    } else {
-                        "modify.fillet"
-                    };
                     self.ui.ribbon = RibbonTab::Aendern;
                     self.start_tool(werkzeug);
                     if let Ok(r) = antwort {

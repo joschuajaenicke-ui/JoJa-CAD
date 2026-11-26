@@ -3167,9 +3167,18 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 .or_else(|| p.len("radius"))
                 .or_else(|| p.len("distance"))
                 .ok_or_else(|| "Parameter 'radius' bzw. 'distance' fehlt".to_string())?;
-            // Knick einer Polylinie (T0247): **ein** Objekt und der Scheitelpunkt.
+            // Knick einer Polylinie oder eines Pfades (T0247): **ein** Objekt und
+            // der Scheitelpunkt.
             if let (Some(id), Some(knoten)) = (ids.first().copied(), p.num("vertex")) {
-                let e = crate::ecke::anwenden_polylinie(doc, id, knoten as usize, mass, art)?;
+                let pfad = matches!(
+                    doc.entity(id).map(|e| &e.kind),
+                    Some(crate::model::EntityKind::Path { .. })
+                );
+                let e = if pfad {
+                    crate::ecke::anwenden_pfad(doc, id, knoten as usize, mass, art)?
+                } else {
+                    crate::ecke::anwenden_polylinie(doc, id, knoten as usize, mass, art)?
+                };
                 return Ok(json!({
                     "ok": true,
                     "changed": [id],
@@ -3179,7 +3188,7 @@ pub fn execute(doc: &mut Document, id: &str, params: &Value) -> Result<Value, St
                 }));
             }
             if ids.len() < 2 {
-                return Err("Abrunden und Phase brauchen zwei Linien oder eine Polylinie mit Knick".into());
+                return Err("Abrunden und Phase brauchen zwei Linien, einen Polylinien- oder Pfad-Knick".into());
             }
             let picks = p.pts("picks").unwrap_or_default();
             let (e, neu) = crate::ecke::anwenden(

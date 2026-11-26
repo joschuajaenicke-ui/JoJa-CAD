@@ -426,7 +426,18 @@ pub fn ecke_polylinie(
     };
     knick_ist_gerade(verts, knoten)?;
     let (vor, hier, nach) = knick_punkte(verts, *closed, knoten)?;
-    ecke_aus_strahlen(hier, (vor, hier), None, (hier, nach), None, mass, art)
+    // Die stehen bleibenden Seiten sind die beiden Nachbarpunkte — ausdrücklich
+    // übergeben, damit ungleich lange Schenkel nicht den Rückfall („längere
+    // Seite") auslösen.
+    ecke_aus_strahlen(
+        hier,
+        (vor, hier),
+        Some(vor),
+        (hier, nach),
+        Some(nach),
+        mass,
+        art,
+    )
 }
 
 /// Schreibt den Knick in die Polylinie: der Scheitelpunkt wird durch die beiden
@@ -467,6 +478,153 @@ pub fn anwenden_polylinie(
         crate::geom::Vertex::new(e.t2),
     ];
     verts.splice(knoten..=knoten, neu);
+    doc.modified = true;
+    Ok(e)
+}
+
+// ---------------------------------------------------------------------------
+// Knick eines Pfades (T0247, Turn 6)
+// ---------------------------------------------------------------------------
+
+/// Die beiden Stücke am Knick `k` eines Pfades: das ankommende (`k−1`) und das
+/// abgehende (`k`) — beide mit umlaufendem Index, damit auch die Naht einer
+/// geschlossenen Kette (letztes Stück → erstes) erreichbar ist.
+fn pfad_stuecke(
+    segments: &[crate::pfad::PathSeg],
+    closed: bool,
+    knoten: usize,
+) -> Result<(usize, usize), String> {
+    let n = segments.len();
+    if n < 2 {
+        return Err("Der Pfad hat keinen Knick".into());
+    }
+    if knoten >= n || (!closed && knoten == 0) {
+        return Err("Diesen Knick gibt es nicht".into());
+    }
+    Ok(((knoten + n - 1) % n, knoten))
+}
+
+/// Ist der Knick aus zwei **geraden** Stücken? Bögen, Ellipsenbögen und Splines
+/// haben am Anschluss eine Tangente, keine Sehnenrichtung — eine Abrundung dort
+/// wäre eine andere Aufgabe (wie bei der Polylinie).
+fn pfad_knick_ist_gerade(
+    segments: &[crate::pfad::PathSeg],
+    vor: usize,
+    hier: usize,
+) -> Result<(), String> {
+    let gerade = |s: &crate::pfad::PathSeg| matches!(s, crate::pfad::PathSeg::Line { .. });
+    if !gerade(&segments[vor]) || !gerade(&segments[hier]) {
+        return Err("Der Knick liegt an einem Bogen — nur gerade Stücke".into());
+    }
+    Ok(())
+}
+
+/// Nächster Knick eines Pfades in Fangnähe — die Naht zwischen zwei geraden
+/// Stücken, die ein Klick mit **einem** Schritt wählt.
+///
+/// Gibt `(Objekt, Index des abgehenden Stücks, Knickpunkt)` zurück. Offene
+/// Enden und Nähte an Bögen werden gar nicht erst angeboten.
+pub fn pfad_knoten(doc: &Document, bei: Vec2, tol: f64) -> Option<(Id, usize, Vec2)> {
+    let mut best: Option<(f64, Id, usize, Vec2)> = None;
+    for e in doc.ents() {
+        let EntityKind::Path { segments, closed } = &e.kind else {
+            continue;
+        };
+        if !doc.layer_sichtbar(e.layer) || doc.layer_gesperrt(e.layer) {
+            continue;
+        }
+        let n = segments.len();
+        if n < 2 {
+            continue;
+        }
+        for k in 0..n {
+            if !*closed && k == 0 {
+                continue;
+            }
+            let vor = (k + n - 1) % n;
+            if pfad_knick_ist_gerade(segments, vor, k).is_err() {
+                continue;
+            }
+            let p = segments[k].start();
+            let d = p.dist(bei);
+            if d <= tol && best.map(|(bd, ..)| d < bd).unwrap_or(true) {
+                best = Some((d, e.id, k, p));
+            }
+        }
+    }
+    best.map(|(_, id, k, p)| (id, k, p))
+}
+
+/// Rechnet den Knick eines Pfades — **ohne** die Zeichnung zu ändern.
+///
+/// `knoten` ist der Index des Stücks, das am Knick **beginnt**. Die beiden
+/// Nachbarstücke sind die Schenkel, ihre freien Enden bleiben stehen.
+pub fn ecke_pfad(doc: &Document, id: Id, knoten: usize, mass: f64, art: EckeArt) -> Result<Ecke, String> {
+    let e = doc
+        .entity(id)
+        .ok_or_else(|| format!("Objekt {id} nicht gefunden"))?;
+    let EntityKind::Path { segments, closed } = &e.kind else {
+        return Err("Abrunden und Phase gehen an einem Pfad nur am Knick".into());
+    };
+    let (vor, hier) = pfad_stuecke(segments, *closed, knoten)?;
+    pfad_knick_ist_gerade(segments, vor, hier)?;
+    let punkt = segments[hier].start();
+    let anfang = segments[vor].start();
+    let ende = segments[hier].end();
+    ecke_aus_strahlen(
+        punkt,
+        (anfang, punkt),
+        Some(anfang),
+        (punkt, ende),
+        Some(ende),
+        mass,
+        art,
+    )
+}
+
+/// Schreibt den Knick in den Pfad: die beiden Nachbarstücke enden bzw. beginnen
+/// am Anschlusspunkt, dazwischen kommt ein neues Stück — der Bogen (Abrunden)
+/// bzw. die Gerade (Phase). Alles bleibt in **einem** Objekt.
+pub fn anwenden_pfad(
+    doc: &mut Document,
+    id: Id,
+    knoten: usize,
+    mass: f64,
+    art: EckeArt,
+) -> Result<Ecke, String> {
+    let e = ecke_pfad(doc, id, knoten, mass, art)?;
+    let Some(em) = doc.entity_mut(id) else {
+        return Err(format!("Objekt {id} nicht gefunden"));
+    };
+    let EntityKind::Path { segments, closed } = &mut em.kind else {
+        return Err("Kein Pfad".into());
+    };
+    let (vor, hier) = pfad_stuecke(segments, *closed, knoten)?;
+    // Ankommendes Stück endet am ersten Anschluss, abgehendes beginnt am zweiten.
+    if let crate::pfad::PathSeg::Line { b, .. } = &mut segments[vor] {
+        *b = e.t1;
+    }
+    if let crate::pfad::PathSeg::Line { a, .. } = &mut segments[hier] {
+        *a = e.t2;
+    }
+    let stueck = match e.bogen {
+        Some(arc) => crate::pfad::PathSeg::Arc {
+            c: arc.c,
+            r: arc.r,
+            a0: arc.a0,
+            a1: arc.a1,
+            // Läuft das Stück in Bogenrichtung (a0 → a1)? Sonst umgekehrt.
+            rev: arc.start().dist(e.t1) > ECKE_EPS,
+        },
+        None => crate::pfad::PathSeg::Line { a: e.t1, b: e.t2 },
+    };
+    if hier == 0 {
+        // Naht einer geschlossenen Kette: das neue Stück schließt hinten an,
+        // die Reihenfolge der Stücke bleibt die Laufrichtung.
+        segments.push(stueck);
+    } else {
+        segments.insert(hier, stueck);
+    }
     doc.modified = true;
     Ok(e)
 }

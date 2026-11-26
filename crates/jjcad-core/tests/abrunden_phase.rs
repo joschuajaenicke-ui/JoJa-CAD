@@ -2,9 +2,10 @@
 //! Ecke mit Bogen bzw. mit gerader Fase. Geprüft wird die gespeicherte
 //! Geometrie — Endpunkte beider Linien, Mittelpunkt und Winkel des Bogens.
 
-use jjcad_core::ecke::{ecke, linien_durch, polylinien_knoten, EckeArt};
+use jjcad_core::ecke::{ecke, linien_durch, pfad_knoten, polylinien_knoten, EckeArt};
 use jjcad_core::geom::{v, Vec2};
 use jjcad_core::model::{EntityKind, Id};
+use jjcad_core::pfad::PathSeg;
 use jjcad_core::session::Session;
 use serde_json::json;
 
@@ -315,4 +316,209 @@ fn knick_wird_ueber_den_scheitelpunkt_getroffen() {
     let treffer = polylinien_knoten(&s.doc, v(1005.0, -3.0), 8.0);
     assert_eq!(treffer.map(|(id, i, _)| (id, i)), Some((pl, 1)));
     assert_eq!(polylinien_knoten(&s.doc, v(500.0, 0.0), 8.0), None);
+}
+
+// ---------------------------------------------------------------------------
+// Pfad (T0247, Turn 6): der Knick zwischen zwei geraden Stücken
+// ---------------------------------------------------------------------------
+
+/// Pfad aus drei geraden Stücken — wie ihn `draw.path` bzw. `path.connect`
+/// hinterlässt: (0,0)→(1,0)→(1,1)→(0,1), Knick bei (1,0) und (1,1).
+fn pfad(s: &mut Session, pts: &[[f64; 2]], closed: bool) -> Id {
+    s.execute("draw.path", &json!({"pts": pts, "closed": closed}))
+        .expect("Pfad anlegen");
+    s.doc.entities.last().unwrap().id
+}
+
+/// Pfad direkt aus Stücken — unabhängig davon, was das Werkzeug gerade ablegt.
+fn pfad_aus(s: &mut Session, stuecke: Vec<jjcad_core::pfad::PathSeg>, closed: bool) -> Id {
+    let id = s.doc.new_id();
+    let layer = s.doc.current_layer;
+    let e = jjcad_core::model::Entity::new(
+        id,
+        layer,
+        EntityKind::Path {
+            segments: stuecke,
+            closed,
+        },
+    );
+    s.doc.add_entity(e);
+    id
+}
+
+fn stuecke(s: &Session, id: Id) -> Vec<jjcad_core::pfad::PathSeg> {
+    match &s.doc.entity(id).expect("Objekt fehlt").kind {
+        EntityKind::Path { segments, .. } => segments.clone(),
+        other => panic!("kein Pfad: {other:?}"),
+    }
+}
+
+/// Der Knick eines Pfades wird abgerundet: die beiden Nachbarstücke enden an
+/// den Anschlusspunkten, dazwischen steht ein Bogenstück — alles in **einem**
+/// Objekt, die Zahl der Stücke wächst um eins.
+#[test]
+fn pfad_knick_wird_abgerundet() {
+    let mut s = s();
+    let pf = pfad(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], false);
+    let antwort = s
+        .execute(
+            "modify.fillet",
+            &json!({"ids": [pf], "vertex": 1, "radius": 0.2}),
+        )
+        .expect("Abrunden am Pfad-Knick");
+    assert!(antwort["ok"].as_bool().unwrap_or(false));
+
+    let segs = stuecke(&s, pf);
+    assert_eq!(segs.len(), 4, "ein Stück kommt hinzu");
+    // Erstes Stück endet am Anschluss, das neue ist der Bogen, danach das alte.
+    assert_punkt(segs[0].end(), [800.0, 0.0], "Anschluss ankommend");
+    match &segs[1] {
+        jjcad_core::pfad::PathSeg::Arc { c, r, .. } => {
+            assert!((r - 200.0).abs() < 1e-6, "Radius: {r}");
+            assert_punkt(*c, [800.0, 200.0], "Bogenmitte");
+            assert_punkt(segs[1].start(), [800.0, 0.0], "Bogenanfang");
+            assert_punkt(segs[1].end(), [1000.0, 200.0], "Bogenende");
+        }
+        other => panic!("kein Bogenstück: {other:?}"),
+    }
+    assert_punkt(segs[2].start(), [1000.0, 200.0], "abgehendes Stück beginnt am Bogen");
+    assert_punkt(segs[2].end(), [1000.0, 1000.0], "freies Ende bleibt");
+
+    // Die Stücke hängen lückenlos aneinander.
+    for w in segs.windows(2) {
+        assert!(
+            w[0].end().dist(w[1].start()) < 1e-6,
+            "Lücke zwischen den Stücken: {:?} / {:?}",
+            w[0].end(),
+            w[1].start()
+        );
+    }
+}
+
+/// Die Phase am Pfad-Knick: ein gerades Stück zwischen den Anschlusspunkten.
+#[test]
+fn pfad_knick_bekommt_eine_phase() {
+    let mut s = s();
+    let pf = pfad(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    s.execute(
+        "modify.chamfer",
+        &json!({"ids": [pf], "vertex": 1, "distance": 0.15}),
+    )
+    .expect("Phase am Pfad-Knick");
+
+    let segs = stuecke(&s, pf);
+    assert_eq!(segs.len(), 3);
+    match &segs[1] {
+        jjcad_core::pfad::PathSeg::Line { a, b } => {
+            assert_punkt(*a, [850.0, 0.0], "Fase Anfang");
+            assert_punkt(*b, [1000.0, 150.0], "Fase Ende");
+        }
+        other => panic!("keine Fase: {other:?}"),
+    }
+    // Der Pfad bleibt offen und gerade Stück für Stück.
+    assert!(!jjcad_core::pfad::pfad_geschlossen(&segs));
+}
+
+/// Ein Klick auf die Naht findet den Pfad-Knick; ein offenes Ende und eine
+/// Naht an einem Bogenstück werden nicht angeboten.
+#[test]
+fn pfad_knoten_wird_getroffen() {
+    let mut s = s();
+    let pf = pfad(&mut s, &[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]], false);
+    let treffer = pfad_knoten(&s.doc, v(1000.0, 0.0), 5.0).expect("Knick getroffen");
+    assert_eq!(treffer.0, pf);
+    assert_eq!(treffer.1, 1, "Index des abgehenden Stücks");
+    assert_punkt(treffer.2, [1000.0, 0.0], "Knickpunkt");
+
+    assert!(
+        pfad_knoten(&s.doc, v(0.0, 0.0), 5.0).is_none(),
+        "das offene Ende ist kein Knick"
+    );
+    assert!(
+        pfad_knoten(&s.doc, v(500.0, 0.0), 5.0).is_none(),
+        "mitten auf einem Stück liegt kein Knick"
+    );
+}
+
+/// Naht an einem Bogenstück: abgelehnt, die Zeichnung bleibt unverändert.
+#[test]
+fn pfad_knick_am_bogen_ist_ein_fehler() {
+    let mut s = s();
+    // Bogen (Viertelkreis um den Ursprung) und Linie daran: die Naht liegt am
+    // Bogenanfang und ist damit keine Ecke aus zwei Geraden.
+    let pf = pfad_aus(
+        &mut s,
+        vec![
+            PathSeg::Arc {
+                c: v(0.0, 0.0),
+                r: 1000.0,
+                a0: 0.0,
+                a1: std::f64::consts::FRAC_PI_2,
+                rev: false,
+            },
+            PathSeg::Line {
+                a: v(0.0, 1000.0),
+                b: v(1000.0, 1000.0),
+            },
+        ],
+        false,
+    );
+
+    assert!(
+        pfad_knoten(&s.doc, v(0.0, 1000.0), 5.0).is_none(),
+        "an einem Bogen wird kein Knick angeboten"
+    );
+    let falsch = s.execute(
+        "modify.fillet",
+        &json!({"ids": [pf], "vertex": 1, "radius": 0.2}),
+    );
+    assert!(falsch.is_err(), "am Bogen gibt es keine Abrundung");
+    let segs = stuecke(&s, pf);
+    assert_eq!(segs.len(), 2, "nichts verändert");
+}
+
+/// Geschlossener Pfad: die Naht zwischen letztem und erstem Stück ist auch
+/// eine Ecke — das neue Stück schließt hinten an, die Kette bleibt in Ordnung.
+#[test]
+fn geschlossener_pfad_hat_eine_naht_als_knick() {
+    let mut s = s();
+    let ecken = [
+        v(0.0, 0.0),
+        v(1000.0, 0.0),
+        v(1000.0, 1000.0),
+        v(0.0, 1000.0),
+    ];
+    let kette: Vec<PathSeg> = (0..4)
+        .map(|i| PathSeg::Line {
+            a: ecken[i],
+            b: ecken[(i + 1) % 4],
+        })
+        .collect();
+    let pf = pfad_aus(&mut s, kette, true);
+
+    let treffer = pfad_knoten(&s.doc, v(0.0, 0.0), 5.0);
+    assert!(treffer.is_some(), "die Naht am ersten Punkt ist ein Knick");
+    s.execute(
+        "modify.fillet",
+        &json!({"ids": [pf], "vertex": 0, "radius": 0.2}),
+    )
+    .expect("Abrunden an der Naht");
+    let segs = stuecke(&s, pf);
+    assert_eq!(segs.len(), 5);
+    for w in segs.windows(2) {
+        assert!(
+            w[0].end().dist(w[1].start()) < 1e-6,
+            "Lücke in der Kette: {:?} / {:?}",
+            w[0].end(),
+            w[1].start()
+        );
+    }
+    assert!(
+        segs.last().unwrap().end().dist(segs[0].start()) < 1e-6,
+        "der Pfad bleibt geschlossen"
+    );
+    // Das letzte Stück endet am ersten Anschluss, das neue schließt es.
+    // Der ankommende Schenkel läuft die y-Achse hinab, der abgehende nach +X.
+    assert_punkt(segs[3].end(), [0.0, 200.0], "Anschluss auf dem ankommenden Stück");
+    assert_punkt(segs[4].end(), [200.0, 0.0], "Bogen endet am abgehenden Stück");
 }
