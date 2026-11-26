@@ -438,7 +438,9 @@ ausgeblendet.
   **Mit „Nächster Punkt“ zusammen** (T0243): Kreuzt die Senkrechte eine andere Linie in
   Zeigernähe, wird deren **Schnittpunkt** gefangen — der Punkt liegt dann auf der
   Senkrechten *und* auf der anderen Linie. So endet eine lotrechte Linie genau dort, wo sie
-  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung.
+  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung. Angezeigt
+  werden **beide Zeichen**: das Winkelquadrat des Lots am Bezugspunkt und das Kreuz des
+  Schnittpunkts auf dem Fangpunkt.
   Prüfweg: `cargo test -p jjcad-core --test lot_fang` (22 Tests, prüfen das Skalarprodukt
   der beiden Richtungen gegen 0, die Lage der Marke, die Wandkanten und die Kreuzung mit
   einer anderen Linie).
