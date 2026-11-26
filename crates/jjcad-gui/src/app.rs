@@ -3325,6 +3325,38 @@ impl App {
                     self.set_view(v);
                     self.started_at = 3.0;
                 }
+                // Lotrecht × Nächster Punkt (T0243): waagerechte Vorlage für das Lot
+                // und eine zweite waagerechte Linie als Ziel. Der Zeiger rastet auf
+                // der **Kreuzung** beider Bedingungen ein — Prüfbild mit
+                // `x11-drive.py hover` auf (3000; 2500).
+                "lotkreuzung" => {
+                    self.ui.ribbon = RibbonTab::Zeichnen;
+                    self.new_document();
+                    self.session_mut()
+                        .execute("doc.settings", &serde_json::json!({ "input_unit": "mm" }))
+                        .unwrap();
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [0.0, 0.0], "b": [6000.0, 0.0], "layer": "Wände"
+                        }),
+                    );
+                    let _ = self.session_mut().execute(
+                        "draw.line",
+                        &serde_json::json!({
+                            "a": [1000.0, 2500.0], "b": [4500.0, 2500.0], "layer": "Wände"
+                        }),
+                    );
+                    self.start_tool("draw.line");
+                    if let Some(t) = self.tool.as_mut() {
+                        t.pts.push(V2::new(3000.0, 0.0));
+                    }
+                    let mut v = self.current_view();
+                    v.center = V2::new(3000.0, 1400.0);
+                    v.zoom = 0.09;
+                    self.set_view(v);
+                    self.started_at = 3.0;
+                }
                 "tangential" => {
                     self.ui.ribbon = RibbonTab::Zeichnen;
                     // Frische Zeichnung: sie rechnet in Metern, die Punkte des
@@ -3592,6 +3624,42 @@ impl App {
                     self.started_at = 3.0;
                     let mut v = self.current_view();
                     v.center = jjcad_core::geom::Vec2::new(2500.0, -450.0);
+                    v.zoom = 0.15;
+                    self.set_view(v);
+                }
+                // Höhenangaben unter einer Maßkette (T0253): die Angaben
+                // hängen am Abschnitt und stehen unter der Maßlinie.
+                // `hoehenangabewerkzeug` zeigt zusätzlich das offene Textfeld
+                // unter dem zweiten Abschnitt.
+                "hoehenangabe" | "hoehenangabewerkzeug" => {
+                    self.new_document();
+                    self.ui.props_open = true;
+                    self.ui.ribbon = RibbonTab::Bemassung;
+                    let antwort = self.session_mut().execute(
+                        "dim.chain",
+                        &serde_json::json!({"pts": [[0.0, -1.2], [2.0, -1.2],
+                                                    [3.6, -1.2], [6.0, -1.2]],
+                                            "line_pos": [3.0, -2.0], "axis": "x"}),
+                    );
+                    if let Some(id) = antwort.ok().and_then(|r| r["created"][0].as_u64()) {
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 0, "text": "+3,00"}),
+                        );
+                        let _ = self.session_mut().execute(
+                            "dim.height.set",
+                            &serde_json::json!({"ids": [id], "index": 2, "text": "+1,20"}),
+                        );
+                        self.session_mut().select(vec![id]);
+                        // Das Werkzeug-Bild zeigt das offene Feld unter dem
+                        // zweiten Abschnitt — wie nach dem Klick.
+                        if part.trim() == "hoehenangabewerkzeug" {
+                            crate::textedit::start_hoehe(self, id, 1);
+                        }
+                    }
+                    self.started_at = 3.0;
+                    let mut v = self.current_view();
+                    v.center = jjcad_core::geom::Vec2::new(3000.0, -1400.0);
                     v.zoom = 0.15;
                     self.set_view(v);
                 }
@@ -9912,6 +9980,7 @@ impl App {
                     // Punkt anklicken — er kommt in die Kette bzw. geht heraus.
                     self.group(ui, "ribbon.group.massketten", |ui, app| {
                         for (id, icon) in [
+                            ("dim.height", "dim-height"),
                             ("dim.point.add", "point"),
                             ("dim.point.remove", "erase"),
                         ] {
@@ -11294,6 +11363,8 @@ pub(crate) fn commands_hint(tool: &Tool, opts: &ToolOptions) -> &'static str {
             }
         }
         // Messpunkte ändern: erst die Maßkette, dann der Punkt (T0154).
+        // Höhenangabe (T0253): ein Klick auf den Abschnitt öffnet das Feld.
+        "dim.height" => jjcad_core::i18n::tr("gui.app.hoehenangabe_masskette_klicken"),
         "dim.point.add" => {
             if tool.obj.is_some() {
                 jjcad_core::i18n::tr("gui.app.punkt_hinzufuegen_messpunkt_klicken")

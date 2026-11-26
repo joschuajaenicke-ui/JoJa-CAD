@@ -67,6 +67,8 @@ Ohne `host` sucht `draw.door`/`draw.window` die nächste Wand im Umfeld und
 | `dim.chain.h` / `.v` / `.d` | `pts[]`, `line_pos` | Werkzeuge der Oberfläche: Maßkette waagerecht, senkrecht oder direkt — die Achse kommt aus dem Werkzeug, ein mitgegebenes `axis` sticht sie nicht |
 | `dim.point.add` | `ids`, `p` (oder `pos`), optional `index` | Fügt einer Maßkette einen Messpunkt hinzu; ohne `index` an der Stelle, die die Kette entlang der Messrichtung geordnet hält |
 | `dim.point.remove` | `ids`, `index` oder `p` | Entfernt einen Messpunkt; unter zwei Punkten ist das ein Fehler |
+| `dim.height` | — | Werkzeug der Oberfläche: Maßkette bzw. Abschnitt anklicken, dann die Höhenangabe tippen (Esc/Enter übernimmt) |
+| `dim.height.set` | `ids`, `index`, `text` | Schreibt die Höhenangabe eines Abschnitts (`index` = Abschnitt zwischen `pts[i]` und `pts[i+1]`); leerer Text nimmt sie zurück, ein Index außerhalb der Kette ist ein Fehler |
 | `dim.elevation.plan` | `p`, `z`, `text_pos` | Grundriss-Kote (Kreis-Symbol), `z` in mm über ±0,00; `text_pos` = `top` (Vorgabe) / `bottom` / `left` / `right` — Lage des Höhenwertes am Symbol |
 | `dim.elevation.section` | `pts[]` | Schnitt-Kote; der erste Punkt ist ±0,00, alle weiteren Höhen rechnet der Renderer aus der Y-Differenz |
 
@@ -115,7 +117,7 @@ aktuellen Layers angelegt.
 |---|---|
 | `draw.wall`, `draw.door`, `draw.window`, `draw.stair`, `draw.stair.label` | Architektur |
 | `draw.volume*` | Architektur (Körper im Wandton) |
-| `dim.linear`, `dim.chain*`, `dim.elevation.*`, `dim.room`, `draw.text` | Beschriftung |
+| `dim.linear`, `dim.chain*`, `dim.height*`, `dim.elevation.*`, `dim.room`, `draw.text` | Beschriftung |
 | `block.insert` | Blöcke |
 | `draw.fill*`, `draw.hatch`, `draw.image` | Zeichnung |
 | `draw.point`, `draw.line`, `draw.polyline`, `draw.spline`, `draw.rect`, `draw.circle`, `draw.arc`, `draw.ellipse` | Zeichnung |

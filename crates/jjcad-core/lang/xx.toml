@@ -284,6 +284,14 @@
 # hint = "Messpunkt anklicken — verlässt die Maßkette"
 # label = "Punkt entfernen"
 #
+[action.dim.height]
+# hint = "Maßkette anklicken — Höhenangabe unter dem Abschnitt"
+# label = "Höhenangabe"
+#
+[action.dim.height.set]
+# hint = "Höhenangabe eines Abschnitts schreiben"
+# label = "Höhenangabe setzen"
+#
 [action.dim.elevation.plan]
 # hint = "Punkt klicken — Höhe im Eigenschaften-Panel"
 # label = "Grundriss-Kote"
@@ -1096,6 +1104,7 @@
 # masskette_zweiter_punkt = "Maßkette · zweiter Messpunkt"
 # masskette_position_parallel_klicken = "Maßkette · Maßlinie setzen (Esc beendet)"
 # punkt_hinzufuegen_messpunkt_klicken = "Punkt hinzufügen · Messpunkt anklicken"
+# hoehenangabe_masskette_klicken = "Höhenangabe · Maßkette oder Abschnitt anklicken"
 # punkt_hinzufuegen_masskette_klicken = "Punkt hinzufügen · Maßkette anklicken"
 # punkt_hinzufuegen_gesetzt = "Punkt hinzufügen · gesetzt"
 # punkt_entfernen_messpunkt_klicken = "Punkt entfernen · Messpunkt anklicken"
@@ -1911,6 +1920,7 @@
 # laenge_x_achse_x_x_x_x = "Länge {wert1} · Achse ({wert2}, {wert3}) – ({wert4}, {wert5})"
 # lage_in_der_wanddicke_links_mittig_rechts = "Lage in der Wanddicke: Links / Mittig / Rechts"
 # layer = "Layer"
+# plan = "Plan"
 # linie = "Linie"
 # linientyp = "Linientyp"
 # daemmung_breite = "Breite"
@@ -2024,6 +2034,10 @@
 # bilddaten = "Bilddaten"
 #
 [gui.textedit]
+# hoehe_eingeben_esc_uebernimmt = "Höhenangabe · Text eingeben (Esc übernimmt)"
+# hoehe_aendern_esc_uebernimmt = "Höhenangabe · ändern (Esc übernimmt)"
+# hoehe_geaendert = "Höhenangabe · geändert"
+# hoehe_hinweis = "Esc übernimmt · Enter bestätigt · Rechtsklick bricht ab"
 # esc_uebernimmt_hinweis = "Esc übernimmt · Enter neue Zeile · Rechtsklick bricht ab"
 # text_abgebrochen = "Text · abgebrochen"
 # text_geaendert = "Text · geändert"

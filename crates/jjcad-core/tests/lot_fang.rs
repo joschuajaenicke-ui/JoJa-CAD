@@ -376,3 +376,179 @@ fn lotpunkt_steht_in_der_kandidatenliste() {
     );
     assert!((lot.point.x - 2000.0).abs() < 1e-6, "{:?}", lot.point);
 }
+
+// ---------------------------------------------------------------------------
+// Kombination Lotrecht × „Nächster Punkt" (T0243)
+// ---------------------------------------------------------------------------
+
+/// Sitzung wie [`s`], aber mit eingeschaltetem „Nächster Punkt" — nur dann darf
+/// die Senkrechte eine andere Linie kreuzen und dort fangen.
+fn s_mit_naechstem() -> Session {
+    let mut s = s();
+    s.execute("doc.settings", &json!({ "snap": { "nearest": true } }))
+        .unwrap();
+    s
+}
+
+/// Der Fall aus dem Ticket: die neue Linie steht lotrecht auf der bestehenden
+/// **und** endet auf der anderen Linie. Beide Fänge einzeln liefern je nur eine
+/// der beiden Bedingungen — gefangen werden muss der Schnittpunkt.
+#[test]
+fn lot_und_naechster_punkt_fangen_den_schnittpunkt() {
+    let mut s = s_mit_naechstem();
+    // Quelle des Lots: waagerechte Linie durch den Ursprung.
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    // Die andere Linie, auf der die neue enden soll: waagerecht bei y = 1500.
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+
+    // Bezugspunkt (2000; 0) auf der Quellinie; Zeiger 5 mm über der
+    // Kreuzung (2000; 1500) und 4 mm neben der Senkrechten.
+    let res = fang(&s, (2004.0, 1495.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(
+        res.source,
+        SnapSource::Object(SnapKind::Lot),
+        "kein Lotfang an der Kreuzung: {res:?}"
+    );
+    assert!(
+        res.point.dist(Vec2::new(2000.0, 1500.0)) < 1e-6,
+        "Fangpunkt ist nicht die Kreuzung: {:?}",
+        res.point
+    );
+    // Beide Bedingungen einzeln nachgerechnet.
+    let neu = res.point - Vec2::new(2000.0, 0.0);
+    assert!(
+        Vec2::new(5000.0, 0.0).dot(neu).abs() < 1e-6,
+        "Linie steht nicht rechtwinklig: {:?}",
+        res.point
+    );
+    assert!(
+        (res.point.y - 1500.0).abs() < 1e-6,
+        "Fangpunkt liegt nicht auf der anderen Linie: {:?}",
+        res.point
+    );
+}
+
+/// Die Marke bleibt der rechte Winkel am Bezugspunkt — die Kreuzung ist der
+/// Fangpunkt, nicht die Stelle des Zeichens.
+#[test]
+fn kreuzung_meldet_die_marke_am_bezugspunkt() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    let res = fang(&s, (2004.0, 1495.0), Some((2000.0, 0.0)), &[]);
+    let marke = res.marke.expect("Lotfang ohne Markenstelle");
+    assert!(
+        marke.dist(Vec2::new(2000.0, 0.0)) < 1e-6,
+        "Marke steht nicht im Bezugspunkt: {marke:?}"
+    );
+}
+
+/// Auch auf einer **schrägen** anderen Linie wird exakt geschnitten — der
+/// Punkt wird gerechnet, nicht auf die nähere Achse gerundet.
+#[test]
+fn schraege_andere_linie_wird_exakt_geschnitten() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    // 45°-Linie durch (1000; 1000).
+    linie(&mut s, (1000.0, 1000.0), (4000.0, 4000.0));
+    // Senkrechte durch (2000; 0) ist x = 2000; sie trifft die 45°-Linie bei
+    // (2000; 2000).
+    let res = fang(&s, (2006.0, 1993.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot), "{res:?}");
+    assert!(
+        res.point.dist(Vec2::new(2000.0, 2000.0)) < 1e-6,
+        "Kreuzung mit der schrägen Linie nicht getroffen: {:?}",
+        res.point
+    );
+}
+
+/// Ohne „Nächster Punkt" bleibt es beim Fußpunkt des Zeigers auf der
+/// Senkrechten — die Kombination hängt am eingeschalteten Fang.
+#[test]
+fn ohne_naechsten_punkt_bleibt_der_fusspunkt() {
+    let mut s = s();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    let res = fang(&s, (2004.0, 1495.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot), "{res:?}");
+    assert!(
+        (res.point.x - 2000.0).abs() < 1e-6 && (res.point.y - 1495.0).abs() < 1e-6,
+        "Fangpunkt ist nicht der Fußpunkt: {:?}",
+        res.point
+    );
+}
+
+/// Liegt die Kreuzung außerhalb des Fangradius, gilt weiter der Fußpunkt —
+/// die andere Linie darf den Punkt nicht über den Radius hinaus ziehen.
+#[test]
+fn kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    // Zeiger 3 mm neben der Senkrechten, aber 30 mm unter der anderen Linie —
+    // die Kreuzung liegt damit außerhalb von 20 mm.
+    let res = fang(&s, (2003.0, 1595.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot), "{res:?}");
+    assert!(
+        (res.point.x - 2000.0).abs() < 1e-6 && (res.point.y - 1595.0).abs() < 1e-6,
+        "Kreuzung außerhalb des Radius wurde trotzdem gefangen: {:?}",
+        res.point
+    );
+}
+
+/// Die Quellinie selbst ist keine „andere Linie": ihr Schnitt mit der
+/// Senkrechten ist der Bezugspunkt und damit kein Fangpunkt mit Länge.
+#[test]
+fn eigene_quelle_ist_keine_kreuzung() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    let res = fang(&s, (2005.0, 800.0), Some((2000.0, 0.0)), &[]);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot), "{res:?}");
+    assert!(
+        (res.point.x - 2000.0).abs() < 1e-6 && (res.point.y - 800.0).abs() < 1e-6,
+        "eigene Linie wurde als Kreuzung gefangen: {:?}",
+        res.point
+    );
+}
+
+/// Der Lotfang auf einer **Wandachse** kreuzt ebenso eine Linie: der Punkt
+/// liegt auf der Senkrechten zur Wand und auf der Linie.
+#[test]
+fn wandachse_kreuzt_eine_linie() {
+    let mut s = s_mit_naechstem();
+    s.execute(
+        "draw.wall",
+        &json!({ "a": [0.0, 0.0], "b": [6000.0, 0.0], "thickness": 240.0 }),
+    )
+    .unwrap();
+    linie(&mut s, (1000.0, 2500.0), (4000.0, 2500.0));
+    let res = fang(&s, (3004.0, 2496.0), Some((3000.0, 0.0)), &[]);
+    assert_eq!(res.source, SnapSource::Object(SnapKind::Lot), "{res:?}");
+    assert!(
+        res.point.dist(Vec2::new(3000.0, 2500.0)) < 1e-6,
+        "Kreuzung mit der Wandachse nicht getroffen: {:?}",
+        res.point
+    );
+}
+
+/// Die Kreuzung steht als Kandidat in derselben Liste wie jeder andere Fang —
+/// die Zeichenfläche bekommt sie über denselben Weg.
+#[test]
+fn kreuzung_steht_in_der_kandidatenliste() {
+    let mut s = s_mit_naechstem();
+    linie(&mut s, (0.0, 0.0), (5000.0, 0.0));
+    linie(&mut s, (1000.0, 1500.0), (4000.0, 1500.0));
+    let cands = snap_candidates(
+        &s.doc,
+        Vec2::new(2004.0, 1495.0),
+        20.0,
+        Some(Vec2::new(2000.0, 0.0)),
+        &[],
+    );
+    assert!(
+        cands
+            .iter()
+            .any(|h| h.kind == SnapKind::Lot && h.point.dist(Vec2::new(2000.0, 1500.0)) < 1e-6),
+        "Kreuzung fehlt in der Kandidatenliste: {cands:?}"
+    );
+}

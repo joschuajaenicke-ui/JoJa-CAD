@@ -50,6 +50,14 @@ die **Vorgabe** ihrer Ebene und lassen sich wie jede andere Taste ändern.
    **Reihenfolge**: Messpunkte dürfen in beliebiger Reihenfolge geklickt
    werden — die Kette sortiert sie entlang der Maßlinie, beim Anlegen und beim
    Einfügen. Ein Zickzack entsteht dadurch nicht.
+   **Höhenangabe** (Ribbon ▸ Bemaßung ▸ „Höhenangabe“): die Maßkette an dem
+   Abschnitt anklicken, der die Höhe bekommen soll — unter der Maßlinie steht
+   dann ein einfaches Textfeld, in das die Höhe getippt wird. `Esc` oder
+   `Enter` übernimmt, ein Klick daneben ebenfalls, Rechtsklick bricht ab. Jeder
+   Abschnitt trägt höchstens eine Angabe; sie steht **unter** der Maßkette
+   (die Maßzahl steht darüber) und wandert mit ihr mit. Ein **Doppelklick** auf
+   eine vorhandene Höhenangabe öffnet sie wieder zum Ändern; ein leerer Text
+   nimmt sie zurück.
    **Verlängerung** (Eigenschaften-Panel, Gruppe „Maß“): Maßhilfslinien von den
    Messpunkten zur Maßlinie. Vorgabe **aus** — die Maßzahl steht allein an der
    Maßlinie; eingeschaltet zeichnet jeder Messpunkt seine Hilfslinie.
@@ -424,8 +432,13 @@ ausgeblendet.
   **Schnittpunkt** beider Linien (dem festen Punkt), leicht daneben oben rechts, damit sie
   den Punkt nicht zudeckt. Abschaltbar in Einstellungen ▸ Fangen und im Fangmenü der
   Statusleiste („Lotfang“).
-  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (14 Tests, prüfen das Skalarprodukt
-  der beiden Richtungen gegen 0, die Lage der Marke und die Wandkanten).
+  **Mit „Nächster Punkt“ zusammen** (T0243): Kreuzt die Senkrechte eine andere Linie in
+  Zeigernähe, wird deren **Schnittpunkt** gefangen — der Punkt liegt dann auf der
+  Senkrechten *und* auf der anderen Linie. So endet eine lotrechte Linie genau dort, wo sie
+  eine vorhandene kreuzt; ohne die Kombination läge der Punkt neben der Kreuzung.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (22 Tests, prüfen das Skalarprodukt
+  der beiden Richtungen gegen 0, die Lage der Marke, die Wandkanten und die Kreuzung mit
+  einer anderen Linie).
 - **Fangmarken** (T0153): Jeder Fang **am Element** zeigt sein eigenes Zeichen am
   **Fangpunkt** — also am Objekt, nicht am Zeiger: Endpunkt ein Quadrat, Mittelpunkt ein
   Dreieck, Zentrum ein Kreis mit Kreuz, Schnittpunkt ein Kreuz, Quadrant eine Raute, Lot ein
@@ -556,7 +569,18 @@ ausgeblendet.
   Blöcke auf **Blöcke**, Linien und Flächen auf **Zeichnung**. Das Eigenschaften-Panel zeigt beim
   Platzieren diese Ziel-Ebene in der Zeile „Layer“; eine dort (oder im Layer-Manager als **eigene**
   Ebene) gewählte Ebene sticht die Vorgabe — wer sie wählt, zeichnet bewusst dorthin. Ein ausgeblendeter Plan blendet alle seine Layer aus, ein gesperrter sperrt sie; die
-  Einstellungen der einzelnen Layer bleiben dabei erhalten.
+  Einstellungen der einzelnen Layer bleiben dabei erhalten. **Alle vier Layer zeichnen schwarz**
+  (`style::LAYER_FARBE`, T0249): vorher trugen Beschriftung ein Rot und Blöcke ein Grau, sodass
+  Texte, Raumstempel und Blockinstanzen einer neuen Datei farbig standen. Eine vorhandene
+  Zeichnung bringt ihre eigenen Layerfarben mit und behält sie — umstellen lässt sie sich am
+  Farbpunkt im Layer-Manager.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel ist **ein**
+  Dropdown mit **zwei Abschnitten**: oben jeder Layername **einmal**, darunter die Pläne. Ein Klick
+  auf einen Layernamen setzt diesen Layer im Plan **jedes** gewählten Objekts; ein Klick auf einen
+  Plan verschiebt alle gewählten Objekte dorthin und behält ihren Layernamen bei — ein Text bleibt
+  auf „Beschriftung“, eine Linie auf „Zeichnung“. Liegen die Objekte im selben Plan, nennt das Feld
+  den Plan und meldet abweichende Layer als `*variiert*` („Plan 1 · *variiert*“); liegen sie in
+  verschiedenen Plänen, steht dort `*variiert*`.
 - Das rechte Panel zeigt die **Eigenschaften der Auswahl**; ohne Auswahl die der Datei bzw. des
   Blatts. Die Werte stehen als Tabelle mit fester Namensspalte und Zebra-Streifen untereinander.
 - **Hotbar-Vorlagen** wählt man über das Dropdown unten links; dort lassen sich neue Vorlagen

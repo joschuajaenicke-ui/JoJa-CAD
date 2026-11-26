@@ -232,6 +232,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
             override_text,
             ext_lines,
             symbol,
+            heights,
         } => {
             // Messpunkte in Messreihenfolge halten (T0195): Ziehen, Drehen,
             // Spiegeln und Einfügen verschieben Punkte über ihre Nachbarn
@@ -250,6 +251,7 @@ pub fn transform_kind(k: &EntityKind, m: &Affine) -> EntityKind {
                 override_text: override_text.clone(),
                 ext_lines: *ext_lines,
                 symbol: symbol.clone(),
+                heights: heights.clone(),
             };
             crate::render::dim_reihenfolge(&mut kind);
             kind
@@ -472,21 +474,20 @@ fn transform_path_seg(
             a: m.apply(*a),
             b: m.apply(*b),
         },
-        PathSeg::Arc { c, r, a0, a1 } => {
-            if m.is_mirrored() {
-                PathSeg::Arc {
-                    c: m.apply(*c),
-                    r: *r * f,
-                    a0: -a1 + m.rotation(),
-                    a1: -a0 + m.rotation(),
-                }
+        PathSeg::Arc { c, r, a0, a1, rev } => {
+            // Gespiegelt kehrt sich die Laufrichtung um — der Ausschnitt
+            // selbst bleibt erhalten und wird nur an der Achse gespiegelt.
+            let (aa, ab) = if m.is_mirrored() {
+                (-*a1, -*a0)
             } else {
-                PathSeg::Arc {
-                    c: m.apply(*c),
-                    r: *r * f,
-                    a0: a0 + m.rotation(),
-                    a1: a1 + m.rotation(),
-                }
+                (*a0, *a1)
+            };
+            PathSeg::Arc {
+                c: m.apply(*c),
+                r: *r * f,
+                a0: aa + m.rotation(),
+                a1: ab + m.rotation(),
+                rev: *rev ^ m.is_mirrored(),
             }
         }
         PathSeg::EllipseArc {
@@ -496,6 +497,7 @@ fn transform_path_seg(
             rot,
             a0,
             a1,
+            rev,
         } => {
             let (aa, ab, r) = if m.is_mirrored() {
                 (-*a1, -*a0, m.rotation() - *rot)
@@ -509,6 +511,7 @@ fn transform_path_seg(
                 rot: r,
                 a0: aa,
                 a1: ab,
+                rev: *rev ^ m.is_mirrored(),
             }
         }
         PathSeg::Spline { verts } => PathSeg::Spline {

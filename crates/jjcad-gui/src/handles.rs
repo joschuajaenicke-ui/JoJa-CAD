@@ -1904,6 +1904,7 @@ mod tests_masskette {
                 override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
             },
         )
     }
@@ -2222,6 +2223,7 @@ mod tests_masskette {
                 override_text: None,
                 ext_lines: false,
                 symbol: jjcad_core::model::DIM_SYMBOL_VORGABE.to_string(),
+                heights: Vec::new(),
             },
         );
         let griffe = grips_of(&e);

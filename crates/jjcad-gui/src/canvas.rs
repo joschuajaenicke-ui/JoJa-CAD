@@ -1736,9 +1736,49 @@ pub fn show(app: &mut App, ui: &mut Ui) {
 /// alte Text beim Doppelklick auf eine geladene Zeichnung im Hintergrund
 /// stehen (T0019, Turn 3).
 fn ohne_texteingabe(app: &App, dl: &mut DisplayList) {
-    if let Some(id) = app.ui.texteingabe.as_ref().and_then(|t| t.id) {
-        dl.prims.retain(|p| p.entity != id);
+    let Some(t) = app.ui.texteingabe.as_ref() else {
+        return;
+    };
+    let Some(id) = t.id else {
+        return;
+    };
+    // Höhenangabe einer Maßkette (T0253): nur **diese eine Zeile** ausblenden.
+    // Das ganze Objekt zu entfernen nähme die Maßkette samt Maßzahlen aus dem
+    // Bild — übrig bliebe nur das Eingabefeld.
+    if let Some(index) = t.hoehe {
+        let Some(e) = app.doc().entity(id) else {
+            return;
+        };
+        let EntityKind::Dim {
+            pts,
+            line_pos,
+            angle,
+            ..
+        } = &e.kind
+        else {
+            return;
+        };
+        let skala = app.doc().plan_scale_of_layer(e.layer).max(0.01);
+        let style = &app.doc().dim_style;
+        let gap = style
+            .text_gap
+            .max(style.text_height * jjcad_core::render::DIM_TEXT_ABSTAND_H)
+            * skala;
+        let Some((_, anker, _, _)) = jjcad_core::render::dim_hoehe_lagen(
+            pts, *line_pos, *angle, gap,
+        )
+        .get(index)
+        .copied()
+        else {
+            return;
+        };
+        dl.prims.retain(|p| {
+            !(p.entity == id
+                && matches!(&p.shape, jjcad_core::render::Shape::Text(tp) if tp.pos.dist(anker) < 1e-6))
+        });
+        return;
     }
+    dl.prims.retain(|p| p.entity != id);
 }
 
 /// Die Maßkette, deren Messpunkte gerade gesetzt werden, steht als **Vorschau**
@@ -3169,13 +3209,8 @@ pub(crate) fn pfad_vorschau(tool: &Tool, cursor: V2, tol: f64) -> PfadVorschau {
     };
     if tool.schritte.last() == Some(&PfadSchritt::ArcPoint) && tool.pts.len() >= 2 {
         let von = tool.pts[tool.pts.len() - 2];
-        return match Arc::from_3_points(von, letzt, cursor) {
-            Some(arc) => PfadVorschau::Bogen(jjcad_core::pfad::PathSeg::Arc {
-                c: arc.c,
-                r: arc.r,
-                a0: arc.a0,
-                a1: arc.a1,
-            }),
+        return match jjcad_core::pfad::arc_aus_3_punkten(von, letzt, cursor) {
+            Some(arc) => PfadVorschau::Bogen(arc),
             // Drei Punkte auf einer Geraden: der Klick legt eine Linie an.
             None => PfadVorschau::Sehne {
                 von,
@@ -3230,6 +3265,47 @@ fn paint_vorschau_dl(
     }
 }
 
+/// Der Punkt, den die Werkzeug-Vorschau als „Zeiger" benutzt (T0246).
+///
+/// Ohne Eingabe ist das der Fangpunkt selbst. Steht eine **Länge** im
+/// Tippepuffer, liegt der Vorschau-Punkt in dieser Entfernung auf der
+/// Zeigerrichtung — dieselbe Rechnung, die `Enter` beim Absetzen anwendet
+/// (`letzte + Richtung × getippte Länge`). Vorher zeigte die Vorschau weiter
+/// bis zum Mauszeiger, das Feld daneben aber schon die getippte Zahl.
+///
+/// Nicht hierher gehören die Zahlen, die **keine** Länge sind: Koordinaten
+/// (`x;y` — Semikolon), der Winkel beim Drehen und das Maß von Abrunden/Phase
+/// (dort steht die zweite Linie schon fest). Ebenso bleibt es beim Zeiger,
+/// solange kein letzter Punkt steht oder der Zeiger keine Richtung gibt (er
+/// liegt genau auf dem letzten Punkt).
+pub fn vorschau_punkt(app: &App, zeiger: Option<V2>) -> Option<V2> {
+    let w = zeiger?;
+    let eingabe = app.ui.typed.trim();
+    let Some(tool) = app.tool.as_ref() else {
+        return Some(w);
+    };
+    if eingabe.is_empty() || app.hilfslinie_modus || eingabe.contains(';') {
+        return Some(w);
+    }
+    if ist_drehwerkzeug(&tool.action) || (ist_eckenwerkzeug(&tool.action) && tool.obj2.is_some()) {
+        return Some(w);
+    }
+    let Some(start) = tool.pts.last().copied() else {
+        return Some(w);
+    };
+    let Some(laenge) = jjcad_core::units::parse_length(eingabe, app.unit()) else {
+        return Some(w);
+    };
+    if laenge <= 0.0 {
+        return Some(w);
+    }
+    let richtung = (w - start).normalized();
+    if richtung.len() <= 0.0 {
+        return Some(w);
+    }
+    Some(start + richtung * laenge)
+}
+
 fn draw_tool_preview(
     app: &mut App,
     p: &Painter,
@@ -3247,7 +3323,9 @@ fn draw_tool_preview(
     ) {
         app.paint.zuruecksetzen();
     }
-    let Some(cursor) = snapped else {
+    // T0246: Mit getippter Länge endet die Vorschau in dieser Entfernung auf
+    // der Zeigerrichtung — sie zeigt damit, was `Enter` setzen wird.
+    let Some(cursor) = vorschau_punkt(app, snapped) else {
         app.paint.zuruecksetzen();
         return;
     };
@@ -5382,6 +5460,11 @@ fn handle_input(
         && resp.double_clicked_by(egui::PointerButton::Primary)
     {
         if let Some(p) = raw.or(snapped) {
+            if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+                app.verwerfe_move_drag();
+                crate::textedit::start_hoehe(app, id, index);
+                return;
+            }
             if let Some(id) = crate::textedit::text_bei(app, p) {
                 app.verwerfe_move_drag();
                 crate::textedit::start_entitaet(app, id);
@@ -5544,8 +5627,15 @@ fn handle_input(
     }
 
     // Doppelklick auf einen Text: Inhalt direkt in der Zeichnung ändern.
+    // Eine Höhenangabe unter einer Maßkette ist ebenfalls ein Textfeld und
+    // wird genauso geöffnet (T0253).
     if app.tool.is_none() && resp.double_clicked_by(egui::PointerButton::Primary) {
-        if let Some(id) = crate::textedit::text_bei(app, raw.unwrap_or(w)) {
+        let p = raw.unwrap_or(w);
+        if let Some((id, index)) = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), p) {
+            crate::textedit::start_hoehe(app, id, index);
+            return;
+        }
+        if let Some(id) = crate::textedit::text_bei(app, p) {
             crate::textedit::start_entitaet(app, id);
             return;
         }
@@ -7692,6 +7782,11 @@ fn hover_ziel(app: &App, w: V2, tol: f64) -> Option<Id> {
     if tool.obj.is_none() && ist_punktwerkzeug(&tool.action) {
         return dim_kette_unter_zeiger(app, w, tol);
     }
+    // Höhenangabe (T0253): die Kette unter dem Zeiger tritt hervor, damit vor
+    // dem Klick klar ist, wozu die Angabe gehören wird.
+    if tool.action == "dim.height" {
+        return dim_kette_unter_zeiger(app, w, tol);
+    }
     // Abrunden und Phase (T0247): solange die Ecke noch nicht steht, tritt das
     // hervor, was der Klick wählen würde — der Knick einer Polylinie oder eine
     // Linie. Sonst ist nicht zu sehen, worauf die Abrundung sich bezieht.
@@ -8382,6 +8477,33 @@ fn tool_click_at(app: &mut App, w: V2, raw: V2) {
                     let _ = run(app, &action, json!({"ids": [id], "p": ax(w)}));
                     app.tool = Some(tool);
                 }
+            }
+        }
+        // Höhenangabe unter einer Maßkette (T0253): **ein** Klick auf die
+        // Kette, danach steht das Textfeld unter dem getroffenen Abschnitt
+        // (Esc/Enter übernimmt). Ein Doppelklick auf eine vorhandene Angabe
+        // öffnet sie ohne dieses Werkzeug.
+        "dim.height" => {
+            let tol = (8.0 / app.current_view().zoom).max(0.5);
+            match dim_kette_unter_zeiger(app, w, tol) {
+                Some(id) => {
+                    // Auf eine vorhandene Angabe geklickt: genau die ändern.
+                    let idx = jjcad_core::render::dim_hoehe_unter_punkt(app.doc(), raw)
+                        .filter(|(h, _)| *h == id)
+                        .and_then(|(_, i)| Some(i))
+                        .or_else(|| {
+                            app.doc()
+                                .entity(id)
+                                .and_then(|e| jjcad_core::render::dim_abschnitt_bei(&e.kind, raw))
+                        });
+                    match idx {
+                        Some(index) => {
+                            crate::textedit::start_hoehe(app, id, index);
+                        }
+                        None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
+                    }
+                }
+                None => app.toast(jjcad_core::i18n::tr("gui.canvas.masskette_waehlen")),
             }
         }
         "dim.elevation.plan" => {
@@ -20805,5 +20927,245 @@ mod tests_zeigerfeld {
             !tipp_rect.intersects(icon_rect(zeiger)),
             "Tippfeld und Werkzeug-Icon überlagern sich: {tipp_rect:?}"
         );
+    }
+}
+#[cfg(test)]
+mod tests_laengenvorschau {
+    //! Vorschau mit getippter Länge (T0246).
+    //!
+    //! Wer eine Länge tippt, sieht sie im Feld am Zeiger; die Vorschau zeigte
+    //! aber weiter bis zum Mauszeiger. Geprüft wird die eine Rechnung
+    //! (`vorschau_punkt`) und am gerenderten Bild, dass die Vorschau-Linie in
+    //! der getippten Entfernung endet.
+
+    use super::*;
+    use crate::app::App;
+
+    const FENSTER: Vec2 = Vec2::new(1500.0, 950.0);
+
+    /// Linienwerkzeug mit Anfangspunkt im Ursprung, Einheit Millimeter, alle
+    /// Fänge aus — der Zeigerpunkt ist damit genau der Mauszeiger.
+    fn app_mit_linienanfang() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        assert!(
+            run(
+                &mut app,
+                "doc.settings",
+                json!({"input_unit": "mm", "snap": {
+                    "ortho": false, "polar": false, "grid": false,
+                    "endpoint": false, "midpoint": false, "center": false,
+                    "intersection": false, "perpendicular": false,
+                    "nearest": false, "wall_edges": false
+                }}),
+            ),
+            "Einstellungen nicht gesetzt"
+        );
+        app.start_tool("draw.line");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app
+    }
+
+    fn rahmen(app: &mut App, zeiger: Option<Pos2>, tippen: Option<&str>) -> egui::FullOutput {
+        let ctx = app.ctx.clone();
+        let mut raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, FENSTER)),
+            ..Default::default()
+        };
+        if let Some(p) = zeiger {
+            raw.events.push(egui::Event::PointerMoved(p));
+        }
+        if let Some(t) = tippen {
+            raw.events.push(egui::Event::Text(t.to_string()));
+        }
+        ctx.run(raw, |ctx| app.ui(ctx))
+    }
+
+    /// Die Vorschau-Linie, die am Anfangspunkt beginnt (Farbe der Vorschau).
+    fn vorschau_linie(out: &egui::FullOutput, start: Pos2) -> Option<(Pos2, Pos2)> {
+        fn suche(s: &egui::Shape, start: Pos2, treffer: &mut Option<(Pos2, Pos2)>) {
+            match s {
+                egui::Shape::LineSegment { points, stroke } => {
+                    let farbe = Palette::vorschau().gamma_multiply(0.9);
+                    let farbe_ok = matches!(
+                        stroke.color,
+                        egui::epaint::ColorMode::Solid(c) if c == farbe
+                    );
+                    if farbe_ok && points[0].distance(start) < 1.5 {
+                        *treffer = Some((points[0], points[1]));
+                    }
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|s| suche(s, start, treffer)),
+                _ => {}
+            }
+        }
+        let mut treffer = None;
+        for cs in &out.shapes {
+            suche(&cs.shape, start, &mut treffer);
+        }
+        treffer
+    }
+
+    /// Kern des Tickets: „1,5" auf der Zeigerrichtung ergibt den Punkt in
+    /// 1,5 m — nicht den Mauszeiger.
+    #[test]
+    fn getippte_laenge_setzt_den_vorschau_punkt_auf_diese_entfernung() {
+        let mut app = app_mit_linienanfang();
+        let zeiger = V2::new(3000.0, 4000.0);
+        assert_eq!(
+            vorschau_punkt(&app, Some(zeiger)),
+            Some(zeiger),
+            "ohne Eingabe zeigt die Vorschau zum Zeiger"
+        );
+
+        app.ui.typed = "1500".into();
+        let p = vorschau_punkt(&app, Some(zeiger)).expect("kein Vorschau-Punkt");
+        // Richtung (3, 4)/5 = (0,6; 0,8), Länge 1500 mm.
+        assert!(
+            (p.x - 900.0).abs() < 1e-6 && (p.y - 1200.0).abs() < 1e-6,
+            "Vorschau-Punkt steht bei {p:?}, erwartet (900, 1200)"
+        );
+    }
+
+    /// Die Zahlen, die keine Länge sind, lassen die Vorschau am Zeiger.
+    #[test]
+    fn winkel_koordinaten_und_eckenmass_bleiben_beim_zeiger() {
+        let zeiger = V2::new(3000.0, 4000.0);
+
+        // Koordinate „x;y" (Semikolon).
+        let mut app = app_mit_linienanfang();
+        app.ui.typed = "100;200".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Drehen: die Zahl ist ein Winkel in Grad.
+        let mut app = app_mit_linienanfang();
+        app.start_tool("modify.rotate");
+        app.tool.as_mut().unwrap().pts.push(V2::new(0.0, 0.0));
+        app.ui.typed = "30".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+
+        // Ohne letzter Punkt gibt es keine Richtung.
+        let mut app = app_mit_linienanfang();
+        app.tool.as_mut().unwrap().pts.clear();
+        app.ui.typed = "1500".into();
+        assert_eq!(vorschau_punkt(&app, Some(zeiger)), Some(zeiger));
+    }
+
+    /// Am gerenderten Bild: die Vorschau-Linie endet in der getippten
+    /// Entfernung statt am Mauszeiger.
+    #[test]
+    fn vorschau_linie_endet_in_der_getippten_entfernung() {
+        let mut app = app_mit_linienanfang();
+        app.set_view(View {
+            center: V2::new(0.0, 0.0),
+            zoom: 0.2,
+            rot: 0.0,
+        });
+        rahmen(&mut app, None, None);
+        let flaeche = app.ui.last_canvas;
+        let start = world_to_screen(flaeche, app.current_view(), V2::new(0.0, 0.0));
+        let zeiger = start + Vec2::new(200.0, 0.0);
+
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie am Zeiger");
+        assert!(
+            (ende.x - zeiger.x).abs() < 1.5 && (ende.y - zeiger.y).abs() < 1.5,
+            "ohne Eingabe endet die Vorschau nicht am Zeiger: {ende:?}"
+        );
+
+        // Das erste Bild nimmt nur die Ziffern an (gezeichnet wird vor der
+        // Eingabe), das zweite zeigt die Vorschau mit der getippten Länge.
+        let _ = rahmen(&mut app, Some(zeiger), Some("800"));
+        assert_eq!(app.ui.typed, "800", "die Ziffern landen nicht im Tippepuffer");
+        let out = rahmen(&mut app, Some(zeiger), None);
+        let (_, ende) = vorschau_linie(&out, start).expect("keine Vorschau-Linie mit Eingabe");
+        let erwartet = world_to_screen(flaeche, app.current_view(), V2::new(800.0, 0.0));
+        assert!(
+            (ende.x - erwartet.x).abs() < 1.5 && (ende.y - erwartet.y).abs() < 1.5,
+            "die Vorschau endet bei {ende:?}, erwartet {erwartet:?} (800 mm)"
+        );
+    }
+}
+
+mod tests_hoehenangabe {
+    //! T0253: Das Werkzeug „Höhenangabe“ öffnet unter dem angeklickten
+    //! Abschnitt ein Textfeld; geschrieben wird über `dim.height.set`.
+
+    use super::*;
+    use jjcad_core::units::Unit;
+
+    fn app() -> App {
+        let mut app = App::with_ctx(egui::Context::default());
+        app.doc_mut().settings.input_unit = Unit::Mm;
+        app
+    }
+
+    fn kette(app: &mut App) -> u64 {
+        let antwort = app
+            .session_mut()
+            .execute(
+                "dim.chain",
+                &json!({"pts": [[0.0, 0.0], [2000.0, 0.0], [5000.0, 0.0]],
+                        "line_pos": [1000.0, -500.0], "axis": "x"}),
+            )
+            .expect("Maßkette");
+        antwort["created"][0].as_u64().expect("Kennung")
+    }
+
+    #[test]
+    fn werkzeug_oeffnet_das_feld_unter_dem_abschnitt() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.start_tool("dim.height");
+        // Klick auf die Maßlinie im zweiten Abschnitt (2000 … 5000).
+        tool_click(&mut app, V2::new(4000.0, -500.0));
+        let t = app
+            .ui
+            .texteingabe
+            .as_ref()
+            .expect("das Textfeld muss offen sein");
+        assert_eq!(t.id, Some(id), "das Feld gehört zur Maßkette");
+        assert_eq!(t.hoehe, Some(1), "der zweite Abschnitt ist gewählt");
+        assert!(t.pos.y < -500.0, "das Feld steht unter der Maßlinie");
+        assert!(t.text.is_empty(), "eine neue Angabe beginnt leer");
+    }
+
+    #[test]
+    fn das_offene_feld_nimmt_nur_die_hoehenangabe_aus_dem_bild() {
+        let mut app = app();
+        let id = kette(&mut app);
+        app.session_mut()
+            .execute(
+                "dim.height.set",
+                &json!({"ids": [id], "index": 1, "text": "+2,40"}),
+            )
+            .expect("setzen");
+        assert!(crate::textedit::start_hoehe(&mut app, id, 1));
+        let dl = display_list(&mut app);
+        let eigene: Vec<_> = dl.prims.iter().filter(|p| p.entity == id).collect();
+        assert!(
+            eigene
+                .iter()
+                .any(|p| matches!(&p.shape, jjcad_core::render::Shape::Line(..))),
+            "die Maßkette muss sichtbar bleiben"
+        );
+        let texte = eigene
+            .iter()
+            .filter(|p| matches!(&p.shape, jjcad_core::render::Shape::Text(_)))
+            .count();
+        assert_eq!(texte, 2, "die beiden Maßzahlen bleiben stehen");
+        assert!(
+            !eigene.iter().any(|p| matches!(&p.shape,
+                jjcad_core::render::Shape::Text(t) if t.text == "+2,40")),
+            "die bearbeitete Angabe ist ausgeblendet"
+        );
+    }
+
+    #[test]
+    fn ohne_masskette_bleibt_das_werkzeug_offen() {
+        let mut app = app();
+        app.start_tool("dim.height");
+        tool_click(&mut app, V2::new(4000.0, 3000.0));
+        assert!(app.ui.texteingabe.is_none(), "nirgends eine Maßkette");
+        assert_eq!(app.tool_id(), Some("dim.height"), "das Werkzeug läuft weiter");
     }
 }

@@ -279,6 +279,27 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   war die Ursache, dass neue Texte auf „Zeichnung“ landeten (T0202, Turn 3).
   Prüfweg: `cargo test -p jjcad-core --test plaene` und
   `cargo test -p jjcad-gui tests_plaene`.
+- **Standardlayer sind schwarz (T0249)**: Die vier Layer eines Plans tragen als Vorgabe
+  **eine** Farbe, `style::LAYER_FARBE` (= `Color::BLACK`, `#1C1F24`). Vorher stand
+  „Beschriftung“ in Rot und „Blöcke“ in Grau: eine neue Datei zeigte alle Texte,
+  Raumstempel und Blockinstanzen farbig, obwohl der Plan schwarz gezeichnet wird.
+  Geändert ist nur die **Vorgabe** — eine vorhandene Zeichnung bringt ihre Layerfarben
+  in der Datei mit und behält sie (so auch die `samples/`). Wer die Vorgabe prüft,
+  nimmt `Document::new` und die gespeicherte Datei. Prüfweg:
+  `cargo test -p jjcad-core --test standard_ebenen layer_einer_neuen_datei_sind_schwarz`
+  und `cargo test -p jjcad-core --test massketten_farbe`.
+- **Layer und Plan getrennt wählen (T0245)**: Die Zeile „Layer“ im Eigenschaften-Panel
+  ist **ein** Dropdown mit zwei Abschnitten — oben jeder Layername **einmal**, darunter
+  die Pläne (`props::ebene_dropdown`). Das Feld nennt den gemeinsamen Plan und meldet
+  abweichende Layer als `*variiert*`; liegen die Objekte in verschiedenen Plänen, steht
+  dort `*variiert*`. Zwei getrennte Aufträge an die Befehlsschicht, beide über
+  `modify.set`: `layer_name` setzt diesen Namen im Plan **jedes** Objekts, `plan`
+  verschiebt auf denselben Layernamen im Zielplan (`actions.rs` rechnet die Ziellayer je
+  Objekt vorab, `ensure_layer_in` legt fehlende an). Nur so verschieben sich mehrere
+  Objekte verschiedener Layer gemeinsam auf einen anderen Plan, ohne ihre
+  Layerstruktur zu verlieren. Ältere Einträge der Liste („Plan · Layer“) gibt es nicht
+  mehr. Prüfweg: `cargo test -p jjcad-core --test layer_plan` und
+  `cargo test -p jjcad-gui tests_layer_plan`.
 - **Maßstab je Plan (T0232)**: Der Maßstab (1:N) gehört **jedem Plan**, nicht der
   Datei (`settings.annotation_scale` gibt es nur noch als Altlast zum Laden;
   `persist::normalize_plaene` verteilt ihn auf die Pläne). `Plan::scale` ist die
@@ -699,6 +720,24 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   `Entity::kann_punktsymbol` (Punkt/Linie) — sonst trüge die Kette zwei Symbole.
   Prüfweg: `cargo test -p jjcad-core --test masskette_symbol` und
   `cargo test -p jjcad-gui tests_masskette_symbol`; Prüfbild `--demo masskette`.
+- **Höhenangaben unter Maßketten (T0253)**: Jeder Abschnitt einer Maßkette kann
+  eine Höhenangabe tragen — ein einfaches Textfeld **unter** der Maßlinie (die
+  Maßzahl steht darüber). Gespeichert ist sie in `EntityKind::Dim::heights`
+  (`Vec<String>`, Index = Abschnitt, leere Einträge = keine Angabe,
+  `skip_serializing_if`), damit sie mit der Kette wandert und beim Entfernen
+  eines Messpunkts mit ihrem Abschnitt verschwindet. Geschrieben wird über
+  `dim.height.set` (`ids`, `index`, `text`), das Werkzeug `dim.height` (Ribbon
+  Bemaßung) öffnet nach einem Klick auf den Abschnitt das Feld; ein
+  **Doppelklick** auf eine vorhandene Angabe öffnet sie über
+  `textedit::start_hoehe` — derselbe Editor wie beim Text, einzeilig, Esc/Enter
+  übernimmt. Lage, Winkel und Ausrichtung stehen **einmal** in
+  `render::dim_hoehe_lagen` (Anzeige, Doppelklick
+  `render::dim_hoehe_unter_punkt`, Editor); die Abschnittswahl für den Klick
+  ist `render::dim_abschnitt_bei`. Vorschau von Ketten zeigt keine Höhen.
+  Prüfweg: `cargo test -p jjcad-core --test hoehenangaben`,
+  `cargo test -p jjcad-gui tests_hoehenangabe` und
+  `cargo test -p jjcad-gui tests_hoehe`; Prüfbilder `--demo hoehenangabe`
+  und `--demo hoehenangabewerkzeug`.
 - **Reihenfolge der Messpunkte (T0195)**: Die Reihenfolge in `Dim::pts` **ist**
   die Reihenfolge der Maßzahlen — gemessen wird immer zwischen zwei
   aufeinanderfolgenden Punkten. Ein gezogener Messpunkt kann zwischen seine
@@ -756,6 +795,21 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   in Weltkoordinaten (`tol` des Fangs, Vorgabe 12 px), also bildschirmkonstant. Der
   Fangbereich ist damit ein Band mit einer Spitze am Bezugspunkt: nah am Punkt begrenzt der
   Winkel, fern die Breite. Eine reine Winkelprüfung (`polar_snap_from_tol`) gibt es nicht mehr.
+- **Lotrecht × Nächster Punkt (T0243)**: Die Senkrechte ist für sich eine *Linie*, der
+  Fang liefert aber nur den Fußpunkt des Zeigers auf ihr — ein Punkt neben der anderen
+  Linie. „Nächster Punkt" liefert umgekehrt den Fußpunkt auf der anderen Linie, neben der
+  Senkrechten. Wer eine lotrechte Linie bis an eine kreuzende zeichnet, meint den **Schnitt
+  beider Bedingungen**; ohne ihn springt der Punkt beim Weiterziehen (gemeldet T0243).
+  Deshalb rechnet `snap::lot_treffer` (Parameter `mit_naechstem`, gespeist aus
+  `snap.nearest`) als **erstes** die Kreuzung der Senkrechten mit jeder fremden Strecke in
+  Zeigernähe (`snap::kreuzung_der_senkrechten` über `nahe_segmente`, dieselbe Auswahl wie
+  „Nächster Punkt"): liegt sie im Fangradius, tritt sie an die Stelle des Fußpunkts. Die
+  Fangart bleibt `SnapKind::Lot` (Marke am Bezugspunkt), die Quelllinie ist ausgenommen
+  (ihr Schnitt ist der Bezugspunkt selbst). Bauart wie `hilfslinien_snap_mit_zwang`
+  bei Ortho/Polar (T0042): eine Bedingung, ein Angebot, gefangen wird der Schnitt.
+  Prüfweg: `cargo test -p jjcad-core --test lot_fang` (`lot_und_naechster_punkt_fangen_den_schnittpunkt`,
+  `schraege_andere_linie_wird_exakt_geschnitten`, `kreuzung_ausserhalb_der_reichweite_bleibt_beim_fusspunkt`;
+  Gegenprobe ist der entfernte Kreuzungszweig — vier Tests fallen).
 - **Splines fangen nur an ihren Stützpunkten (T0134)**: Die gezeichnete Kurve ist
   eine Zerlegung in viele kurze Teilstrecken; deren Enden sind **keine** Fangpunkte.
   Beim Ziehen an einem Stützpunkt wandert die Kurve mit, ein Fang auf einem
@@ -828,7 +882,14 @@ Mit dem Nutzer abgestimmt — nicht „verbessern“:
   Ellipsenbögen/Splines zu einem Pfad — Voraussetzung ist eine lückenlose Kette
   (`pfad_verbinden`), sonst bleibt alles stehen und es gibt einen Fehler. Ein
   geschlossener Pfad umschließt eine **Fläche** (`pfad_flaeche`, Panel-Zeile „Fläche“);
-  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. Ribbon: Polylinie
+  ein Pfad mit Spline ist **nie** geschlossen und hat keine Fläche. **Laufrichtung
+  von Bögen (T0248)**: `PathSeg::Arc`/`EllipseArc` tragen `rev`; `a0`→`a1` ist
+  immer der geometrische Ausschnitt (Gegenuhrzeigersinn), `rev` sagt, ob das Stück
+  umgekehrt durchlaufen wird. Anfang und Ende eines Bogens dürfen **nie** durch
+  vertauschte Winkel ausgedrückt werden — das ergäbe den Gegenbogen (der Bogen
+  sprang beim Verbinden auf die andere Seite des Kreises). `PathSeg::reversed`
+  kippt nur `rev`, `start`/`end`/`flatten` werten es aus, gespiegelt wird es
+  mitgekippt. Ribbon: Polylinie
   und Pfad teilen sich eine geteilte Schaltfläche, sonst überschreitet der Reiter
   „Zeichnen“ die Mindestbreite. Prüfweg: `cargo test -p jjcad-core --test pfad` und
   `cargo test -p jjcad-gui tests_pfad`; Prüfbild `--demo "neudatei,pfad"`.

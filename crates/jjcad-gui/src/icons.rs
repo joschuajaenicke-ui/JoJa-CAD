@@ -318,6 +318,16 @@ pub fn paint(painter: &Painter, rect: Rect, name: &str, color: Color32) {
             i.line(3.0, 14.0, 4.5, 12.5);
             i.line(15.0, 14.0, 16.5, 12.5);
         }
+        // Höhenangabe an einer Maßkette (T0253): die Kette oben, darunter
+        // ein kurzer Textstrich als Höhenangabe.
+        "dim-height" => {
+            i.line(3.0, 11.0, 21.0, 11.0);
+            for x in [3.0, 12.0, 21.0] {
+                i.line(x, 8.0, x, 14.0);
+            }
+            i.line(6.0, 19.0, 18.0, 19.0);
+            i.line(9.0, 16.5, 15.0, 16.5);
+        }
         // Maßkette senkrecht: dieselbe Kette wie „dimchain“, um 90° gedreht
         // (T0154, Turn 3 — je Eingabemodus ein eigenes Zeichen).
         "dim-v" => {
